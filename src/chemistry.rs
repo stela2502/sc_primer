@@ -1,13 +1,25 @@
 use crate::error::{PrimerError, PrimerResult};
 use crate::grammar::Grammar;
+use clap::ValueEnum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Chemistry {
+    /// 10x Genomics Single Cell 3' v2
     TenxV2,
+
+    /// 10x Genomics Single Cell 3' v3
     TenxV3,
+
+    /// 10x Genomics Single Cell 3' v4
     TenxV4,
+
+    /// BD Rhapsody v1 (9bp+9bp+9bp cell blocks, 8bp UMI)
     BdV1,
+
+    /// BD Rhapsody v2 96-well barcode set
     BdV2_96,
+
+    /// BD Rhapsody v2 384-well barcode set
     BdV2_384,
 }
 
