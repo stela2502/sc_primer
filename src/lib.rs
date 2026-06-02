@@ -9,5 +9,5 @@ pub use chemistry::Chemistry;
 pub use detector::PrimerDetector;
 pub use error::{PrimerError, PrimerResult};
 pub use grammar::{Grammar, GrammarOp};
-pub use model::{Orientation, PrimerMatch, PrimerPart, PrimerRange, PrimerSegment};
+pub use model::{Orientation, PrimerMatch, PrimerSegment, PrimerSlice};
 pub use rhapsody::{BdCellVersion, RhapsodyCellCall, RhapsodyWhitelist};

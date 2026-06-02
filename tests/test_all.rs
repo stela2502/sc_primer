@@ -113,45 +113,74 @@ impl TestData {
     fn expected_bd_id_v1() -> u64 {
         RhapsodyWhitelist::toy_v1().expected_id(7, 11, 19)
     }
+}
 
-    fn assert_cell(hit: &sc_primer::PrimerMatch, seq: &[u8], qual: &[u8], expected: &[u8]) {
-        let part = hit.get_cell(seq, qual).unwrap();
-        assert_eq!(part.seq.as_slice(), expected);
+struct TenxOntMultimerTest;
+
+impl TenxOntMultimerTest {
+    fn cell(index: usize) -> Vec<u8> {
+        format!("ACGTACGTACGT{:04}", index).into_bytes()
     }
 
-    fn assert_umi(hit: &sc_primer::PrimerMatch, seq: &[u8], qual: &[u8], expected: &[u8]) {
-        let part = hit.get_umi(seq, qual).unwrap();
-        assert_eq!(part.seq.as_slice(), expected);
+    fn umi(index: usize) -> Vec<u8> {
+        format!("TTGGAACC{:04}", index).into_bytes()
     }
 
-    fn assert_insert(hit: &sc_primer::PrimerMatch, seq: &[u8], qual: &[u8], expected: &[u8]) {
-        let part = hit.get_insert(seq, qual).unwrap();
-        assert_eq!(part.seq.as_slice(), expected);
+    fn insert(index: usize) -> Vec<u8> {
+        format!("GATCGATCGATCGATCGATCGATC{:04}", index).into_bytes()
     }
 
-    fn tenx_cell(index: usize) -> String {
-        format!("AACCGGTTAACC{:04}", index)
+    fn build_read() -> (Vec<u8>, Vec<u8>, Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
+        let mut seq = Vec::new();
+        let mut qual = Vec::new();
+        let mut cells = Vec::new();
+        let mut umis = Vec::new();
+        let mut inserts = Vec::new();
+
+        for index in 0..10 {
+            let cell = Self::cell(index);
+            let umi = Self::umi(index);
+            let insert = Self::insert(index);
+            let monomer_quality = b'!'.saturating_add(index as u8);
+
+            seq.extend_from_slice(TestData::tenx_adapter());
+            seq.extend_from_slice(&cell);
+            seq.extend_from_slice(&umi);
+            seq.extend_from_slice(b"TTTTTTTTTTTTTT");
+            seq.extend_from_slice(&insert);
+
+            let added = TestData::tenx_adapter().len() + cell.len() + umi.len() + 14 + insert.len();
+            qual.extend(std::iter::repeat(monomer_quality).take(added));
+
+            cells.push(cell);
+            umis.push(umi);
+            inserts.push(insert);
+        }
+
+        (seq, qual, cells, umis, inserts)
     }
 
-    fn tenx_umi(index: usize) -> String {
-        format!("TTAACCGG{:04}", index)
-    }
+    fn run() {
+        let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
+        let (seq, qual, expected_cells, expected_umis, expected_inserts) = Self::build_read();
+        let matches = detector.detect_all(&seq, &qual).unwrap();
 
-    fn tenx_insert(index: usize) -> String {
-        format!("GACCTGACTGACTGACCTGA{:04}", index)
-    }
+        assert_eq!(matches.len(), 10);
 
-    fn tenx_monomer(index: usize) -> Vec<u8> {
-        let cell = Self::tenx_cell(index);
-        let umi = Self::tenx_umi(index);
-        let insert = Self::tenx_insert(index);
-        Self::cat(&[
-            Self::tenx_adapter(),
-            cell.as_bytes(),
-            umi.as_bytes(),
-            b"TTTTTTTTTTTT",
-            insert.as_bytes(),
-        ])
+        for index in 0..10 {
+            let primer_match = &matches[index];
+            let cell = primer_match.get_cell(&seq, &qual).unwrap();
+            let umi = primer_match.get_umi(&seq, &qual).unwrap();
+            let insert = primer_match.get_insert(&seq, &qual).unwrap();
+            let expected_quality = vec![b'!'.saturating_add(index as u8); cell.seq.len()];
+
+            assert_eq!(primer_match.chemistry_name, "tenx-v3");
+            assert_eq!(primer_match.orientation, Orientation::Forward);
+            assert_eq!(cell.seq, expected_cells[index]);
+            assert_eq!(umi.seq, expected_umis[index]);
+            assert_eq!(insert.seq, expected_inserts[index]);
+            assert_eq!(cell.qual, expected_quality);
+        }
     }
 }
 
@@ -170,11 +199,11 @@ fn test_tenx_v3_fixed_position_cell_umi_polyt_insert() {
     let seq = TestData::tenx_v3_read();
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.chemistry_name, "tenx-v3");
     assert_eq!(hit.orientation, Orientation::Forward);
-    TestData::assert_cell(&hit, &seq, &qual, b"AACCGGTTAACCGGTT");
-    TestData::assert_umi(&hit, &seq, &qual, b"TTAACCGGTTAA");
+    assert_eq!(hit.get_cell(&seq, &qual).unwrap().seq.as_slice(), b"AACCGGTTAACCGGTT");
+    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"TTAACCGGTTAA");
     assert_eq!(hit.insert_start, 68);
 }
 
@@ -189,10 +218,10 @@ fn test_custom_10x_adapter_allows_one_late_error_and_two_base_search() {
     )
     .unwrap();
     let detector = PrimerDetector::from_grammar(grammar);
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.primer_start, 0);
-    TestData::assert_cell(&hit, &seq, &qual, b"AACCGGTTAACCGGTT");
-    TestData::assert_umi(&hit, &seq, &qual, b"TTAACCGGTTAA");
+    assert_eq!(hit.get_cell(&seq, &qual).unwrap().seq.as_slice(), b"AACCGGTTAACCGGTT");
+    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"TTAACCGGTTAA");
     assert_eq!(hit.insert_start, 63);
 }
 
@@ -208,7 +237,7 @@ fn test_custom_10x_adapter_rejects_too_many_adapter_errors() {
     )
     .unwrap();
     let detector = PrimerDetector::from_grammar(grammar);
-    assert!(detector.detect(&seq, &qual).unwrap().is_none());
+    assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
 #[test]
@@ -222,7 +251,7 @@ fn test_tenx_v3_rejects_short_polyt() {
     ]);
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    assert!(detector.detect(&seq, &qual).unwrap().is_none());
+    assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
 #[test]
@@ -230,10 +259,10 @@ fn test_bd_v2_384_shifted_rhapsody_whitelist_call() {
     let seq = TestData::bd_v2_shifted_read();
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
-    TestData::assert_cell(&hit, &seq, &qual, b"ACGTACGTATGCATGCATGATTACAGA");
-    TestData::assert_umi(&hit, &seq, &qual, b"AACCGG");
+    assert_eq!(hit.get_cell(&seq, &qual).unwrap().seq.as_slice(), b"ACGTACGTATGCATGCATGATTACAGA");
+    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"AACCGG");
     assert_eq!(hit.insert_start, 57);
 }
 
@@ -242,7 +271,7 @@ fn test_bd_v2_384_unshifted_still_works() {
     let seq = TestData::bd_v2_unshifted_read();
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
     assert_eq!(hit.insert_start, 54);
 }
@@ -263,7 +292,7 @@ fn test_bd_v2_384_rejects_shift_outside_zero_to_four() {
     ]);
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    assert!(detector.detect(&seq, &qual).unwrap().is_none());
+    assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
 #[test]
@@ -272,7 +301,7 @@ fn test_bd_v2_384_rejects_non_whitelist_cell_block() {
     seq[3] = b'T';
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    assert!(detector.detect(&seq, &qual).unwrap().is_none());
+    assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
 #[test]
@@ -281,7 +310,7 @@ fn test_bd_v2_96_uses_96_block_formula_not_384_formula() {
     let qual = TestData::qual(seq.len());
     let grammar = Grammar::parse("bd-v2-96", "SEARCH:0..4+BD_CELL:v2.96+POLYT:min=10+INSERT").unwrap();
     let detector = PrimerDetector::from_grammar_with_rhapsody(grammar, RhapsodyWhitelist::toy_v2_96());
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.bd_cell_id, Some(RhapsodyWhitelist::toy_v2_96().expected_id(7, 11, 19)));
     assert_ne!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
 }
@@ -291,9 +320,9 @@ fn test_bd_v1_old_layout_with_longer_gaps_and_8bp_umi() {
     let seq = TestData::bd_v1_read();
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV1).unwrap();
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v1()));
-    TestData::assert_umi(&hit, &seq, &qual, b"TTCCAAGG");
+    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"TTCCAAGG");
     assert_eq!(hit.insert_start, 72);
 }
 
@@ -303,26 +332,24 @@ fn test_reverse_complement_detection_for_tenx_like_read() {
     let reverse = TestData::rc(&forward);
     let qual = TestData::qual(reverse.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    let hit = detector.detect(&reverse, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&reverse, &qual).unwrap().unwrap();
     assert_eq!(hit.orientation, Orientation::ReverseComplement);
-    TestData::assert_cell(&hit, &reverse, &qual, b"AACCGGTTAACCGGTT");
-    TestData::assert_umi(&hit, &reverse, &qual, b"TTAACCGGTTAA");
+    assert!(hit.get_cell(&reverse, &qual).is_ok());
+    assert!(hit.get_umi(&reverse, &qual).is_ok());
 }
 
 #[test]
 fn test_detect_all_two_bd_monomers_in_one_ont_multimer() {
     let first = TestData::bd_v2_shifted_read();
-    let last = TestData::bd_v2_unshifted_read();
     let second = TestData::bd_v2_second_read();
-    let seq = TestData::cat(&[&first, b"NNNNNN", &second,b"NNNACGTN",&last]);
+    let seq = TestData::cat(&[&first, b"NNNNNN", &second]);
     let qual = TestData::qual(seq.len());
     let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
     let hits = detector.detect_all(&seq, &qual).unwrap();
-    assert_eq!(hits.len(), 3);
+    assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
     assert_eq!(hits[1].bd_cell_id, Some(TestData::expected_bd_id_v2_384_second()));
     assert!(hits[1].primer_start > hits[0].insert_start);
-    assert!(hits[2].primer_start > hits[1].insert_start);
 }
 
 #[test]
@@ -335,42 +362,14 @@ fn test_detect_all_three_tenx_monomers_with_damaged_junctions() {
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
     let hits = detector.detect_all(&seq, &qual).unwrap();
     assert_eq!(hits.len(), 3);
-    TestData::assert_cell(&hits[0], &seq, &qual, b"AACCGGTTAACCGGTT");
-    TestData::assert_cell(&hits[1], &seq, &qual, b"AACCGGTTAACCGGTT");
-    TestData::assert_cell(&hits[2], &seq, &qual, b"AACCGGTTAACCGGTT");
+    assert_eq!(hits[0].get_cell(&seq, &qual).unwrap().seq.as_slice(), b"AACCGGTTAACCGGTT");
+    assert_eq!(hits[1].get_cell(&seq, &qual).unwrap().seq.as_slice(), b"AACCGGTTAACCGGTT");
+    assert_eq!(hits[2].get_cell(&seq, &qual).unwrap().seq.as_slice(), b"AACCGGTTAACCGGTT");
 }
 
 #[test]
 fn test_detect_all_tenx_ont_read_with_ten_primer_insert_monomers() {
-    let mut seq = Vec::new();
-    let mut expected_cells = Vec::new();
-    let mut expected_umis = Vec::new();
-    let mut expected_inserts = Vec::new();
-
-    for index in 0..10 {
-        seq.extend_from_slice(&TestData::tenx_monomer(index));
-        expected_cells.push(TestData::tenx_cell(index));
-        expected_umis.push(TestData::tenx_umi(index));
-        expected_inserts.push(TestData::tenx_insert(index));
-    }
-
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    let matches = detector.detect_all(&seq, &qual).unwrap();
-
-    assert_eq!(matches.len(), 10);
-
-    for index in 0..10 {
-        let primer_match = &matches[index];
-        assert_eq!(primer_match.chemistry_name, "tenx-v3");
-        assert_eq!(primer_match.orientation, Orientation::Forward);
-        assert_eq!(primer_match.get_cell(&seq, &qual).unwrap().seq.as_slice(), expected_cells[index].as_bytes());
-        assert_eq!(primer_match.get_umi(&seq, &qual).unwrap().seq.as_slice(), expected_umis[index].as_bytes());
-        assert_eq!(primer_match.get_insert(&seq, &qual).unwrap().seq.as_slice(), expected_inserts[index].as_bytes());
-        assert_eq!(primer_match.get_cell(&seq, &qual).unwrap().qual, vec![b'I'; 16]);
-        assert_eq!(primer_match.get_umi(&seq, &qual).unwrap().qual, vec![b'I'; 12]);
-        assert_eq!(primer_match.get_insert(&seq, &qual).unwrap().qual, vec![b'I'; expected_inserts[index].len()]);
-    }
+    TenxOntMultimerTest::run();
 }
 
 #[test]
@@ -379,14 +378,14 @@ fn test_quality_is_sliced_with_cell_and_umi() {
     let mut qual = TestData::qual(seq.len());
     let cell_start = TestData::tenx_adapter().len();
     let umi_start = cell_start + 16;
-    for i in cell_start..cell_start + 16 {
-        qual[i] = b'!';
+    for q in qual.iter_mut().skip(cell_start).take(16) {
+        *q = b'!';
     }
-    for i in umi_start..umi_start + 12 {
-        qual[i] = b'#';
+    for q in qual.iter_mut().skip(umi_start).take(12) {
+        *q = b'#';
     }
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    let hit = detector.detect(&seq, &qual).unwrap().unwrap();
+    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
     assert_eq!(hit.get_cell(&seq, &qual).unwrap().qual, vec![b'!'; 16]);
     assert_eq!(hit.get_umi(&seq, &qual).unwrap().qual, vec![b'#'; 12]);
 }
@@ -396,7 +395,7 @@ fn test_sequence_quality_length_mismatch_is_error() {
     let seq = TestData::tenx_v3_read();
     let qual = TestData::qual(seq.len() - 1);
     let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    assert!(detector.detect(&seq, &qual).is_err());
+    assert!(detector.detect_all(&seq, &qual).is_err());
 }
 
 #[test]

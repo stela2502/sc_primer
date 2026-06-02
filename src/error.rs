@@ -1,18 +1,21 @@
-use thiserror::Error;
+pub type PrimerResult<T> = Result<T, String>;
 
-pub type PrimerResult<T> = Result<T, PrimerError>;
+pub struct PrimerError;
 
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub enum PrimerError {
-    #[error("unknown chemistry: {0}")]
-    UnknownChemistry(String),
+impl PrimerError {
+    pub fn unknown_chemistry(raw: &str) -> String {
+        format!("unknown chemistry: {raw}")
+    }
 
-    #[error("invalid grammar: {0}")]
-    InvalidGrammar(String),
+    pub fn invalid_grammar(message: impl AsRef<str>) -> String {
+        format!("invalid grammar: {}", message.as_ref())
+    }
 
-    #[error("invalid sequence coordinates: {0}")]
-    InvalidCoordinates(String),
+    pub fn invalid_coordinates(message: impl AsRef<str>) -> String {
+        format!("invalid sequence coordinates: {}", message.as_ref())
+    }
 
-    #[error("rhapsody whitelist error: {0}")]
-    Rhapsody(String),
+    pub fn rhapsody(message: impl AsRef<str>) -> String {
+        format!("rhapsody whitelist error: {}", message.as_ref())
+    }
 }

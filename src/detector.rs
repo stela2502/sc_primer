@@ -31,18 +31,24 @@ impl PrimerDetector {
         Self { grammar, rhapsody: Some(rhapsody), detect_reverse_complement: true }
     }
 
-    pub fn detect(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Option<PrimerMatch>> {
+    pub fn detect(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Vec<PrimerMatch>> {
+        self.detect_all(seq, qual)
+    }
+
+    pub fn detect_first(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Option<PrimerMatch>> {
         if seq.len() != qual.len() {
-            return Err(PrimerError::InvalidCoordinates("sequence and quality have different lengths".to_string()));
+            return Err(PrimerError::invalid_coordinates("sequence and quality have different lengths"));
         }
-        if let Some(hit) = self.detect_one_orientation(seq, qual, Orientation::Forward)? {
+        if let Some(mut hit) = self.detect_one_orientation(seq, qual, Orientation::Forward)? {
+            hit.insert_end = seq.len();
             return Ok(Some(hit));
         }
         if self.detect_reverse_complement {
             let rc_seq = Self::reverse_complement(seq);
             let rc_qual = Self::reverse(qual);
             if let Some(mut hit) = self.detect_one_orientation(&rc_seq, &rc_qual, Orientation::ReverseComplement)? {
-                self.remap_reverse_hit(&mut hit, seq.len());
+                hit.insert_end = rc_seq.len();
+                hit.remap_reverse_coordinates(seq.len());
                 return Ok(Some(hit));
             }
         }
@@ -51,8 +57,9 @@ impl PrimerDetector {
 
     pub fn detect_all(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Vec<PrimerMatch>> {
         if seq.len() != qual.len() {
-            return Err(PrimerError::InvalidCoordinates("sequence and quality have different lengths".to_string()));
+            return Err(PrimerError::invalid_coordinates("sequence and quality have different lengths"));
         }
+
         let mut hits = Vec::new();
         let mut offset = 0usize;
         while offset < seq.len() {
@@ -62,12 +69,13 @@ impl PrimerDetector {
                 offset += 1;
                 continue;
             };
-            hit.shift(offset);
-            let next = hit.insert_start.max(hit.primer_end).max(offset + 1);
+            hit.shift_by(offset);
+            let next_offset = hit.primer_end.max(offset + 1);
             hits.push(hit);
-            offset = next;
+            offset = next_offset;
         }
-        self.close_insert_ranges(&mut hits, seq.len());
+
+        self.finish_insert_ends(&mut hits, seq.len());
         Ok(hits)
     }
 
@@ -80,8 +88,8 @@ impl PrimerDetector {
     }
 
     pub fn try_from_start(&self, seq: &[u8], qual: &[u8], start: usize, orientation: Orientation) -> PrimerResult<Option<PrimerMatch>> {
-        let mut hit = PrimerMatch::new(self.grammar.name.clone(), orientation);
-        hit.primer_start = start;
+        let mut primer_match = PrimerMatch::new(self.grammar.name.clone(), orientation);
+        primer_match.primer_start = start;
         let mut pos = start;
         let mut search = (0usize, 0usize);
 
@@ -95,12 +103,12 @@ impl PrimerDetector {
                 }
                 GrammarOp::Cell { len } => {
                     if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
-                    hit.add_cell_range(pos, pos + *len);
+                    primer_match.add_segment("CELL", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::Umi { len } => {
                     if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
-                    hit.set_umi_range(pos, pos + *len);
+                    primer_match.add_segment("UMI", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::PolyT { min } => {
@@ -109,10 +117,10 @@ impl PrimerDetector {
                     pos += count;
                 }
                 GrammarOp::Insert => {
-                    hit.insert_start = pos;
-                    hit.insert_end = seq.len();
-                    hit.primer_end = pos;
-                    return Ok(Some(hit));
+                    primer_match.insert_start = pos;
+                    primer_match.insert_end = seq.len();
+                    primer_match.primer_end = pos;
+                    return Ok(Some(primer_match));
                 }
                 GrammarOp::Skip { len } => {
                     if !Self::has_range(seq, pos, *len) { return Ok(None); }
@@ -125,47 +133,44 @@ impl PrimerDetector {
                     let Some(rhapsody) = &self.rhapsody else { return Ok(None); };
                     if rhapsody.version() != *version { return Ok(None); }
                     let Some(call) = rhapsody.call(seq, qual, pos, search.0, search.1) else { return Ok(None); };
-                    hit.set_cell_ranges(call.cell_ranges.clone());
-                    hit.set_umi_range(call.umi_range.start, call.umi_range.end);
-                    hit.bd_cell_id = Some(call.cell_id);
+                    primer_match.bd_cell_id = Some(call.cell_id);
+                    primer_match.add_segment_ranges(
+                        "BD_CELL",
+                        vec![call.c1.0..call.c1.1, call.c2.0..call.c2.1, call.c3.0..call.c3.1],
+                    );
+                    primer_match.add_segment("UMI", call.umi.0..call.umi.1);
                     pos = call.consumed;
                     search = (0, 0);
                 }
                 GrammarOp::Tag { len } => {
                     if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
-                    hit.add_named_range("TAG", pos, pos + *len);
+                    primer_match.add_segment("TAG", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::Feature { len } => {
                     if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
-                    hit.add_named_range("FEATURE", pos, pos + *len);
+                    primer_match.add_segment("FEATURE", pos..pos + *len);
                     pos += *len;
                 }
             }
         }
-        hit.primer_end = pos;
-        hit.insert_start = pos;
-        hit.insert_end = seq.len();
-        Ok(Some(hit))
+        primer_match.primer_end = pos;
+        primer_match.insert_start = pos;
+        primer_match.insert_end = seq.len();
+        Ok(Some(primer_match))
     }
 
-    pub fn remap_reverse_hit(&self, hit: &mut PrimerMatch, len: usize) {
-        hit.remap_reverse(len);
-    }
-
-    pub fn shift_hit(&self, hit: &mut PrimerMatch, offset: usize) {
-        hit.shift(offset);
-    }
-
-    pub fn close_insert_ranges(&self, hits: &mut [PrimerMatch], read_len: usize) {
+    pub fn finish_insert_ends(&self, hits: &mut [PrimerMatch], seq_len: usize) {
         if hits.is_empty() {
             return;
         }
-        for index in 0..hits.len() - 1 {
-            hits[index].insert_end = hits[index + 1].primer_start;
+        for idx in 0..hits.len() {
+            hits[idx].insert_end = if idx + 1 < hits.len() {
+                hits[idx + 1].primer_start
+            } else {
+                seq_len
+            };
         }
-        let last = hits.len() - 1;
-        hits[last].insert_end = read_len;
     }
 
     pub fn has_range(seq: &[u8], start: usize, len: usize) -> bool {
@@ -190,7 +195,7 @@ impl PrimerDetector {
 
     pub fn hamming(left: &[u8], right: &[u8]) -> PrimerResult<usize> {
         if left.len() != right.len() {
-            return Err(PrimerError::InvalidCoordinates("hamming requires equal lengths".to_string()));
+            return Err(PrimerError::invalid_coordinates("hamming requires equal lengths"));
         }
         Ok(left.iter().zip(right.iter()).filter(|(a, b)| a != b).count())
     }

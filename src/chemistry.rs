@@ -1,25 +1,42 @@
 use crate::error::{PrimerError, PrimerResult};
 use crate::grammar::Grammar;
+
 use clap::ValueEnum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum Chemistry {
-    /// 10x Genomics Single Cell 3' v2
+    /// 10x Genomics Chromium Single Cell 3' v2.
+    ///
+    /// Layout: adapter + 16 bp cell barcode + 10 bp UMI + polyT + insert.
     TenxV2,
 
-    /// 10x Genomics Single Cell 3' v3
+    /// 10x Genomics Chromium Single Cell 3' v3.
+    ///
+    /// Layout: adapter + 16 bp cell barcode + 12 bp UMI + polyT + insert.
+    #[default]
     TenxV3,
 
-    /// 10x Genomics Single Cell 3' v4
+    /// 10x Genomics Chromium Single Cell 3' v4 / GEM-X style preset.
+    ///
+    /// Layout: adapter + 16 bp cell barcode + 12 bp UMI + polyT + insert.
     TenxV4,
 
-    /// BD Rhapsody v1 (9bp+9bp+9bp cell blocks, 8bp UMI)
+    /// BD Rhapsody v1 / older layout.
+    ///
+    /// Uses three 9 bp barcode blocks, BD whitelist lookup, long linker gaps,
+    /// and an 8 bp UMI.
     BdV1,
 
-    /// BD Rhapsody v2 96-well barcode set
+    /// BD Rhapsody v2 96-cell combinatorial barcode layout.
+    ///
+    /// Uses three 9 bp barcode blocks, BD whitelist lookup, shifts 0..4,
+    /// and the 96-block barcode ID formula.
     BdV2_96,
 
-    /// BD Rhapsody v2 384-well barcode set
+    /// BD Rhapsody v2 384-cell combinatorial barcode layout.
+    ///
+    /// Uses three 9 bp barcode blocks, BD whitelist lookup, shifts 0..4,
+    /// and the 384-block barcode ID formula.
     BdV2_384,
 }
 
@@ -32,7 +49,7 @@ impl Chemistry {
             "bd-v1" => Ok(Self::BdV1),
             "bd-v2-96" => Ok(Self::BdV2_96),
             "bd-v2-384" => Ok(Self::BdV2_384),
-            other => Err(PrimerError::UnknownChemistry(other.to_string())),
+            other => Err(PrimerError::unknown_chemistry(other)),
         }
     }
 

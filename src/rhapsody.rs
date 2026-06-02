@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::error::{PrimerError, PrimerResult};
-use crate::model::PrimerRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BdCellVersion {
@@ -18,10 +17,12 @@ pub struct RhapsodyCellCall {
     pub cell_qual: Vec<u8>,
     pub umi_seq: Vec<u8>,
     pub umi_qual: Vec<u8>,
-    pub cell_ranges: Vec<PrimerRange>,
-    pub umi_range: PrimerRange,
     pub shift: usize,
     pub consumed: usize,
+    pub c1: (usize, usize),
+    pub c2: (usize, usize),
+    pub c3: (usize, usize),
+    pub umi: (usize, usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +38,7 @@ impl BdCellVersion {
             "v1" => Ok(Self::V1),
             "v2.96" => Ok(Self::V2_96),
             "v2.384" => Ok(Self::V2_384),
-            other => Err(PrimerError::Rhapsody(format!("unknown BD cell version '{other}'"))),
+            other => Err(PrimerError::rhapsody(format!("unknown BD cell version '{other}'"))),
         }
     }
 
@@ -73,10 +74,12 @@ impl RhapsodyCellCall {
             cell_qual: Vec::new(),
             umi_seq: Vec::new(),
             umi_qual: Vec::new(),
-            cell_ranges: Vec::new(),
-            umi_range: PrimerRange::new(0, 0),
             shift: 0,
             consumed: 0,
+            c1: (0, 0),
+            c2: (0, 0),
+            c3: (0, 0),
+            umi: (0, 0),
         }
     }
 }
@@ -162,14 +165,12 @@ impl RhapsodyWhitelist {
             cell_qual,
             umi_seq: seq[umi.0..umi.1].to_vec(),
             umi_qual: qual[umi.0..umi.1].to_vec(),
-            cell_ranges: vec![
-                PrimerRange::new(c1.0, c1.1),
-                PrimerRange::new(c2.0, c2.1),
-                PrimerRange::new(c3.0, c3.1),
-            ],
-            umi_range: PrimerRange::new(umi.0, umi.1),
             shift,
             consumed,
+            c1,
+            c2,
+            c3,
+            umi,
         })
     }
 

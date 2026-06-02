@@ -36,7 +36,7 @@ impl Grammar {
             ops.push(GrammarOp::parse_token(token)?);
         }
         if ops.is_empty() {
-            return Err(PrimerError::InvalidGrammar("empty grammar".to_string()));
+            return Err(PrimerError::invalid_grammar("empty grammar"));
         }
         Ok(Self::new(name, ops))
     }
@@ -74,21 +74,21 @@ impl GrammarOp {
         if let Some(rest) = token.strip_prefix("FEATURE:") {
             return Self::parse_len(rest).map(|len| Self::Feature { len });
         }
-        Err(PrimerError::InvalidGrammar(format!("unknown token '{token}'")))
+        Err(PrimerError::invalid_grammar(format!("unknown token '{token}'")))
     }
 
     pub fn parse_fixed(rest: &str) -> PrimerResult<Self> {
         let mut fields = rest.split(':');
         let seq = fields.next().unwrap_or_default().as_bytes().to_vec();
         if seq.is_empty() {
-            return Err(PrimerError::InvalidGrammar("FIXED sequence is empty".to_string()));
+            return Err(PrimerError::invalid_grammar("FIXED sequence is empty"));
         }
         let mut mismatches = 0usize;
         for field in fields {
             if let Some(mm) = field.strip_prefix("mm=") {
                 mismatches = Self::parse_len(mm)?;
             } else {
-                return Err(PrimerError::InvalidGrammar(format!("unknown FIXED option '{field}'")));
+                return Err(PrimerError::invalid_grammar(format!("unknown FIXED option '{field}'")));
             }
         }
         Ok(Self::Fixed { seq, mismatches })
@@ -98,23 +98,23 @@ impl GrammarOp {
         if let Some(min) = rest.strip_prefix("min=") {
             return Self::parse_len(min).map(|min| Self::PolyT { min });
         }
-        Err(PrimerError::InvalidGrammar(format!("bad POLYT token '{rest}'")))
+        Err(PrimerError::invalid_grammar(format!("bad POLYT token '{rest}'")))
     }
 
     pub fn parse_search(rest: &str) -> PrimerResult<Self> {
         let Some((start, end)) = rest.split_once("..") else {
-            return Err(PrimerError::InvalidGrammar(format!("bad SEARCH range '{rest}'")));
+            return Err(PrimerError::invalid_grammar(format!("bad SEARCH range '{rest}'")));
         };
         let start = Self::parse_len(start)?;
         let end = Self::parse_len(end)?;
         if end < start {
-            return Err(PrimerError::InvalidGrammar(format!("bad SEARCH range '{rest}'")));
+            return Err(PrimerError::invalid_grammar(format!("bad SEARCH range '{rest}'")));
         }
         Ok(Self::Search { start, end })
     }
 
     pub fn parse_len(raw: &str) -> PrimerResult<usize> {
         raw.parse::<usize>()
-            .map_err(|_| PrimerError::InvalidGrammar(format!("bad integer '{raw}'")))
+            .map_err(|_| PrimerError::invalid_grammar(format!("bad integer '{raw}'")))
     }
 }

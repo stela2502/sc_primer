@@ -15,7 +15,6 @@ categories = ["science", "parser-implementations"]
 exclude = ["target/", ".github/", "*.tmp"]
 
 [dependencies]
-thiserror = "1.0"
 clap = { version = "4.5.56", features = ["derive"] }
 
 [dev-dependencies]
