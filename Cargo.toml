@@ -1,0 +1,21 @@
+[package]
+name = "sc_primer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+authors = ["Stefan Lang"]
+description = "Reusable single-cell primer/read-structure grammar and detector for 10x, BD Rhapsody, ONT and Illumina preprocessing."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/stela2502/sc_primer"
+homepage = "https://github.com/stela2502/sc_primer"
+documentation = "https://docs.rs/sc_primer"
+keywords = ["single-cell", "primer", "fastq", "rhapsody", "10x"]
+categories = ["science", "parser-implementations"]
+exclude = ["target/", ".github/", "*.tmp"]
+
+[dependencies]
+thiserror = "1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
