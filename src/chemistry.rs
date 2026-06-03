@@ -68,19 +68,19 @@ impl Chemistry {
         match self {
             Self::TenxV2 => Grammar::parse(
                 self.name(),
-                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:10+POLYT:min=10+INSERT",
+                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:10+POLYT:min=0+INSERT",
             ),
             Self::TenxV3 => Grammar::parse(
                 self.name(),
-                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=10+INSERT",
+                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=0+INSERT",
             ),
             Self::TenxV4 => Grammar::parse(
                 self.name(),
-                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=10+INSERT",
+                "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=0+INSERT",
             ),
-            Self::BdV1 => Grammar::parse(self.name(), "BD_CELL:v1+POLYT:min=10+INSERT"),
-            Self::BdV2_96 => Grammar::parse(self.name(), "SEARCH:0..4+BD_CELL:v2.96+POLYT:min=10+INSERT"),
-            Self::BdV2_384 => Grammar::parse(self.name(), "SEARCH:0..4+BD_CELL:v2.384+POLYT:min=10+INSERT"),
+            Self::BdV1 => Grammar::parse(self.name(), "BD_CELL:v1+POLYT:min=0+INSERT"),
+            Self::BdV2_96 => Grammar::parse(self.name(), "SEARCH:0..4+BD_CELL:v2.96+POLYT:min=0+INSERT"),
+            Self::BdV2_384 => Grammar::parse(self.name(), "SEARCH:0..4+BD_CELL:v2.384+POLYT:min=0+INSERT"),
         }
     }
 }
