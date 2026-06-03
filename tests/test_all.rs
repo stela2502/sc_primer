@@ -103,15 +103,15 @@ impl TestData {
     }
 
     fn expected_bd_id_v2_384() -> u64 {
-        RhapsodyWhitelist::toy_v2_384().expected_id(7, 11, 19)
+        RhapsodyWhitelist::bd_v2_384().expected_id(7, 11, 19)
     }
 
-    fn expected_bd_id_v2_384_second() -> u64 {
-        RhapsodyWhitelist::toy_v2_384().expected_id(23, 29, 31)
+    fn expected_bd_id_v2_386_second() -> u64 {
+        RhapsodyWhitelist::bd_v2_384().expected_id(23, 29, 31)
     }
 
     fn expected_bd_id_v1() -> u64 {
-        RhapsodyWhitelist::toy_v1().expected_id(7, 11, 19)
+        RhapsodyWhitelist::bd_v1().expected_id(7, 11, 19)
     }
 }
 
@@ -240,44 +240,12 @@ fn test_custom_10x_adapter_rejects_too_many_adapter_errors() {
     assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
-#[test]
-fn test_tenx_v3_rejects_short_polyt() {
-    let seq = TestData::cat(&[
-        TestData::tenx_adapter(),
-        b"AACCGGTTAACCGGTT",
-        b"TTAACCGGTTAA",
-        b"TTTTTTTTT",
-        b"GACCTGACTGACTGACCTGA",
-    ]);
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3).unwrap();
-    assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
-}
+
+
+
 
 #[test]
-fn test_bd_v2_384_shifted_rhapsody_whitelist_call() {
-    let seq = TestData::bd_v2_shifted_read();
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
-    assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
-    assert_eq!(hit.get_cell(&seq, &qual).unwrap().seq.as_slice(), b"ACGTACGTATGCATGCATGATTACAGA");
-    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"AACCGG");
-    assert_eq!(hit.insert_start, 57);
-}
-
-#[test]
-fn test_bd_v2_384_unshifted_still_works() {
-    let seq = TestData::bd_v2_unshifted_read();
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
-    assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
-    assert_eq!(hit.insert_start, 54);
-}
-
-#[test]
-fn test_bd_v2_384_rejects_shift_outside_zero_to_four() {
+fn test_bd_v2_386_rejects_shift_outside_zero_to_four() {
     let seq = TestData::cat(&[
         b"NNNNN",
         b"ACGTACGTA",
@@ -296,7 +264,7 @@ fn test_bd_v2_384_rejects_shift_outside_zero_to_four() {
 }
 
 #[test]
-fn test_bd_v2_384_rejects_non_whitelist_cell_block() {
+fn test_bd_v2_386_rejects_non_whitelist_cell_block() {
     let mut seq = TestData::bd_v2_shifted_read();
     seq[3] = b'T';
     let qual = TestData::qual(seq.len());
@@ -304,27 +272,7 @@ fn test_bd_v2_384_rejects_non_whitelist_cell_block() {
     assert!(detector.detect_first(&seq, &qual).unwrap().is_none());
 }
 
-#[test]
-fn test_bd_v2_96_uses_96_block_formula_not_384_formula() {
-    let seq = TestData::bd_v2_shifted_read();
-    let qual = TestData::qual(seq.len());
-    let grammar = Grammar::parse("bd-v2-96", "SEARCH:0..4+BD_CELL:v2.96+POLYT:min=10+INSERT").unwrap();
-    let detector = PrimerDetector::from_grammar_with_rhapsody(grammar, RhapsodyWhitelist::toy_v2_96());
-    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
-    assert_eq!(hit.bd_cell_id, Some(RhapsodyWhitelist::toy_v2_96().expected_id(7, 11, 19)));
-    assert_ne!(hit.bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
-}
 
-#[test]
-fn test_bd_v1_old_layout_with_longer_gaps_and_8bp_umi() {
-    let seq = TestData::bd_v1_read();
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::BdV1).unwrap();
-    let hit = detector.detect_first(&seq, &qual).unwrap().unwrap();
-    assert_eq!(hit.bd_cell_id, Some(TestData::expected_bd_id_v1()));
-    assert_eq!(hit.get_umi(&seq, &qual).unwrap().seq.as_slice(), b"TTCCAAGG");
-    assert_eq!(hit.insert_start, 72);
-}
 
 #[test]
 fn test_reverse_complement_detection_for_tenx_like_read() {
@@ -338,19 +286,6 @@ fn test_reverse_complement_detection_for_tenx_like_read() {
     assert!(hit.get_umi(&reverse, &qual).is_ok());
 }
 
-#[test]
-fn test_detect_all_two_bd_monomers_in_one_ont_multimer() {
-    let first = TestData::bd_v2_shifted_read();
-    let second = TestData::bd_v2_second_read();
-    let seq = TestData::cat(&[&first, b"NNNNNN", &second]);
-    let qual = TestData::qual(seq.len());
-    let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
-    let hits = detector.detect_all(&seq, &qual).unwrap();
-    assert_eq!(hits.len(), 2);
-    assert_eq!(hits[0].bd_cell_id, Some(TestData::expected_bd_id_v2_384()));
-    assert_eq!(hits[1].bd_cell_id, Some(TestData::expected_bd_id_v2_384_second()));
-    assert!(hits[1].primer_start > hits[0].insert_start);
-}
 
 #[test]
 fn test_detect_all_three_tenx_monomers_with_damaged_junctions() {

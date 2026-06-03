@@ -25,7 +25,7 @@ impl PrimerCli {
     pub fn detector(&self) -> Result<PrimerDetector, String> {
         let detector = if let Some(structure) = self.primer_structure.as_deref() {
 
-            PrimerDetector::from_grammar_with_rhapsody( Grammar::parse( "custom", structure)?, RhapsodyWhitelist::toy_v2_384())
+            PrimerDetector::from_grammar_with_rhapsody( Grammar::parse( "custom", structure)?, RhapsodyWhitelist::bd_v2_384())
         } else {
             PrimerDetector::from_chemistry(self.chemistry)?
         };

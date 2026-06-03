@@ -15,9 +15,9 @@ impl PrimerDetector {
     pub fn from_chemistry(chemistry: Chemistry) -> PrimerResult<Self> {
         let grammar = chemistry.grammar()?;
         let rhapsody = match chemistry {
-            Chemistry::BdV1 => Some(RhapsodyWhitelist::toy_v1()),
-            Chemistry::BdV2_96 => Some(RhapsodyWhitelist::toy_v2_96()),
-            Chemistry::BdV2_384 => Some(RhapsodyWhitelist::toy_v2_384()),
+            Chemistry::BdV1 => Some(RhapsodyWhitelist::bd_v1()),
+            Chemistry::BdV2_96 => Some(RhapsodyWhitelist::bd_v2_96()),
+            Chemistry::BdV2_384 => Some(RhapsodyWhitelist::bd_v2_384()),
             _ => None,
         };
         Ok(Self { grammar, rhapsody, detect_reverse_complement: true })
