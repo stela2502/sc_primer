@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{PrimerError, PrimerResult};
 
+use onehot_dna::{encode_candidates, OneHot9};
 
 const BD_V2_96_C1: &[&[u8; 9]] = &[ 
     b"GTCGCTATA", b"CTTGTACTA", b"CTTCACATA",
@@ -286,9 +287,14 @@ pub struct RhapsodyCellCall {
 pub struct RhapsodyWhitelist {
     version: BdCellVersion,
     block_size: u64,
-    c1_map: HashMap<Vec<u8>, u64>,
-    c2_map: HashMap<Vec<u8>, u64>,
-    c3_map: HashMap<Vec<u8>, u64>,
+
+    c1_exact: HashMap<Vec<u8>, u64>,
+    c2_exact: HashMap<Vec<u8>, u64>,
+    c3_exact: HashMap<Vec<u8>, u64>,
+
+    c1_fuzzy: Vec<OneHot9>,
+    c2_fuzzy: Vec<OneHot9>,
+    c3_fuzzy: Vec<OneHot9>,
 }
 
 impl BdCellVersion {
@@ -353,9 +359,13 @@ impl RhapsodyWhitelist {
         Self {
             version,
             block_size: version.block_size(),
-            c1_map: Self::make_map(c1s),
-            c2_map: Self::make_map(c2s),
-            c3_map: Self::make_map(c3s),
+            c1_exact: Self::make_map(c1s),
+            c2_exact: Self::make_map(c2s),
+            c3_exact: Self::make_map(c3s),
+
+            c1_fuzzy: encode_candidates::<9, _>(c1s).expect("builtin C1 whitelist must encode"),
+            c2_fuzzy: encode_candidates::<9, _>(c2s).expect("builtin C2 whitelist must encode"),
+            c3_fuzzy: encode_candidates::<9, _>(c3s).expect("builtin C3 whitelist must encode"),
         }
     }
 
@@ -473,16 +483,33 @@ impl RhapsodyWhitelist {
         c1 * self.block_size * self.block_size + c2 * self.block_size + c3 + 1
     }
 
+    #[inline]
+    fn index_block(
+        seq: &[u8],
+        exact: &HashMap<Vec<u8>, u64>,
+        fuzzy: &[OneHot9],
+        max_mismatches: u32,
+    ) -> Option<u64> {
+        if let Some(idx) = exact.get(seq) {
+            return Some(*idx);
+        }
+
+        let obs = OneHot9::from_bytes(seq).ok()?;
+        let (idx, _dist) = obs.best_match(fuzzy, max_mismatches)?;
+
+        Some(idx as u64)
+    }
+
     pub fn index_c1(&self, seq: &[u8]) -> Option<u64> {
-        self.c1_map.get(seq).copied()
+        Self::index_block(seq, &self.c1_exact, &self.c1_fuzzy, 1)
     }
 
     pub fn index_c2(&self, seq: &[u8]) -> Option<u64> {
-        self.c2_map.get(seq).copied()
+        Self::index_block(seq, &self.c2_exact, &self.c2_fuzzy, 1)
     }
 
     pub fn index_c3(&self, seq: &[u8]) -> Option<u64> {
-        self.c3_map.get(seq).copied()
+        Self::index_block(seq, &self.c3_exact, &self.c3_fuzzy, 1)
     }
 
     pub fn coords(

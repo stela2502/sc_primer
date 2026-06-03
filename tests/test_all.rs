@@ -241,7 +241,24 @@ fn test_custom_10x_adapter_rejects_too_many_adapter_errors() {
 }
 
 
+#[test]
+fn bd_v2_386_index_c1_accepts_one_n_via_fuzzy_rescue() {
+    let wl = RhapsodyWhitelist::builtin(BdCellVersion::V2_384);
 
+    let exact = wl
+        .index_c1(b"CGGAGAGAT")
+        .expect("exact C1 should exist");
+
+    let rescued = wl
+        .index_c1(b"CGGNGAGAT")
+        .expect("C1 with one N should be rescued");
+
+    let rescued = wl
+        .index_c1(b"CGGTGAGAT")
+        .expect("C1 with one T should be rescued");
+
+    assert_eq!(rescued, exact);
+}
 
 
 #[test]

@@ -16,6 +16,7 @@ exclude = ["target/", ".github/", "*.tmp"]
 
 [dependencies]
 clap = { version = "4.5.56", features = ["derive"] }
+onehot_dna = { git = "https://github.com/stela2502/onehot_dna" }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
