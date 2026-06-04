@@ -260,7 +260,6 @@ fn bd_v2_386_index_c1_accepts_one_n_via_fuzzy_rescue() {
     assert_eq!(rescued, exact);
 }
 
-
 #[test]
 fn test_bd_v2_386_rejects_shift_outside_zero_to_four() {
     let seq = TestData::cat(&[

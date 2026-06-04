@@ -512,6 +512,58 @@ impl RhapsodyWhitelist {
         Self::index_block(seq, &self.c3_exact, &self.c3_fuzzy, 1)
     }
 
+    pub fn create_primer(
+        &self,
+        c1_idx: usize,
+        c2_idx: usize,
+        c3_idx: usize,
+        umi: &[u8],
+    ) -> Vec<u8> {
+
+        let (c1s, c2s, c3s) = match self.version {
+            BdCellVersion::V1 => (
+                BD_V2_96_C1,
+                BD_V2_96_C2,
+                BD_V2_96_C3,
+            ),
+            BdCellVersion::V2_96 => (
+                BD_V2_96_C1,
+                BD_V2_96_C2,
+                BD_V2_96_C3,
+            ),
+            BdCellVersion::V2_384 => (
+                BD_V2_386_C1,
+                BD_V2_386_C2,
+                BD_V2_386_C3,
+            ),
+        };
+
+        let mut seq = Vec::new();
+
+        match self.version {
+            BdCellVersion::V1 => {
+                seq.extend_from_slice(c1s[c1_idx]);
+                seq.extend_from_slice(b"AAAAAAAAAAAA");
+                seq.extend_from_slice(c2s[c2_idx]);
+                seq.extend_from_slice(b"AAAAAAAAAAAAA");
+                seq.extend_from_slice(c3s[c3_idx]);
+                seq.extend_from_slice(umi);
+            }
+
+            BdCellVersion::V2_96 | BdCellVersion::V2_384 => {
+                seq.extend_from_slice(c1s[c1_idx]);
+                seq.extend_from_slice(b"AAAA");
+                seq.extend_from_slice(c2s[c2_idx]);
+                seq.extend_from_slice(b"AAAA");
+                seq.extend_from_slice(c3s[c3_idx]);
+                seq.extend_from_slice(b"A");
+                seq.extend_from_slice(umi);
+            }
+        }
+
+        seq
+    }
+
     pub fn coords(
         &self,
         base: usize,

@@ -158,3 +158,22 @@ impl PrimerMatch {
         }
     }
 }
+
+
+#[derive(Debug, Clone)]
+pub struct PrimerAttempt {
+    pub offset: usize,
+    pub orientation: Orientation,
+    pub ok: bool,
+    pub reason: String,
+    pub segments: Vec<PrimerSegmentAttempt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrimerSegmentAttempt {
+    pub name: String,
+    pub range: std::ops::Range<usize>,
+    pub dna: String,
+    pub ok: bool,
+    pub reason: String,
+}

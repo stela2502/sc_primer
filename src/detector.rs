@@ -1,7 +1,7 @@
 use crate::chemistry::Chemistry;
 use crate::error::{PrimerError, PrimerResult};
 use crate::grammar::{Grammar, GrammarOp};
-use crate::model::{Orientation, PrimerMatch};
+use crate::model::{Orientation, PrimerMatch, PrimerAttempt, PrimerSegmentAttempt};
 use crate::rhapsody::{BdCellVersion, RhapsodyWhitelist};
 
 #[derive(Debug, Clone)]
@@ -37,21 +37,41 @@ impl PrimerDetector {
 
     pub fn detect_first(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Option<PrimerMatch>> {
         if seq.len() != qual.len() {
-            return Err(PrimerError::invalid_coordinates("sequence and quality have different lengths"));
+            return Err(PrimerError::invalid_coordinates(
+                "sequence and quality have different lengths",
+            ));
         }
-        if let Some(mut hit) = self.detect_one_orientation(seq, qual, Orientation::Forward)? {
-            hit.insert_end = seq.len();
-            return Ok(Some(hit));
-        }
-        if self.detect_reverse_complement {
-            let rc_seq = Self::reverse_complement(seq);
-            let rc_qual = Self::reverse(qual);
-            if let Some(mut hit) = self.detect_one_orientation(&rc_seq, &rc_qual, Orientation::ReverseComplement)? {
-                hit.insert_end = rc_seq.len();
-                hit.remap_reverse_coordinates(seq.len());
+
+        for offset in 0..seq.len() {
+            if let Some(mut hit) = self.detect_one_orientation(
+                &seq[offset..],
+                &qual[offset..],
+                Orientation::Forward,
+            )? {
+                hit.shift_by(offset);
+                hit.insert_end = seq.len();
                 return Ok(Some(hit));
             }
         }
+
+        if self.detect_reverse_complement {
+            let rc_seq = Self::reverse_complement(seq);
+            let rc_qual = Self::reverse(qual);
+
+            for offset in 0..rc_seq.len() {
+                if let Some(mut hit) = self.detect_one_orientation(
+                    &rc_seq[offset..],
+                    &rc_qual[offset..],
+                    Orientation::ReverseComplement,
+                )? {
+                    hit.shift_by(offset);
+                    hit.insert_end = rc_seq.len();
+                    hit.remap_reverse_coordinates(seq.len());
+                    return Ok(Some(hit));
+                }
+            }
+        }
+
         Ok(None)
     }
 
@@ -63,9 +83,7 @@ impl PrimerDetector {
         let mut hits = Vec::new();
         let mut offset = 0usize;
         while offset < seq.len() {
-            let sub_seq = &seq[offset..];
-            let sub_qual = &qual[offset..];
-            let Some(mut hit) = self.detect_one_orientation(sub_seq, sub_qual, Orientation::Forward)? else {
+            let Some(mut hit) = self.try_from_start(seq, qual, offset, Orientation::Forward)? else {
                 offset += 1;
                 continue;
             };
@@ -77,6 +95,59 @@ impl PrimerDetector {
 
         self.finish_insert_ends(&mut hits, seq.len());
         Ok(hits)
+    }
+
+    pub fn explain_all(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Vec<PrimerAttempt>> {
+        if seq.len() != qual.len() {
+            return Err(PrimerError::invalid_coordinates(
+                "sequence and quality have different lengths",
+            ));
+        }
+
+        let mut attempts = Vec::new();
+
+        for offset in 0..seq.len() {
+            //let sub_seq = &seq[offset..];
+            //let sub_qual = &qual[offset..];
+            match self.try_from_start(seq, qual, offset, Orientation::Forward)? {
+                Some(hit) => {
+                    attempts.push(PrimerAttempt {
+                        offset,
+                        orientation: Orientation::Forward,
+                        ok: true,
+                        reason: "matched".to_string(),
+                        segments: hit
+                            .segments
+                            .iter()
+                            .flat_map(|segment| {
+                                segment.ranges.iter().map(|range| PrimerSegmentAttempt {
+                                    name: segment.name.clone(),
+                                    range: range.clone(),
+                                    dna: String::from_utf8_lossy(&seq[range.start..range.end])
+                                        .to_string(),
+                                    ok: true,
+                                    reason: "matched".to_string(),
+                                })
+                            })
+                            .collect(),
+                    });
+
+                    break;
+                }
+
+                None => {
+                    attempts.push(PrimerAttempt {
+                        offset,
+                        orientation: Orientation::Forward,
+                        ok: false,
+                        reason: "no complete primer match".to_string(),
+                        segments: Vec::new(),
+                    });
+                }
+            }
+        }
+
+        Ok(attempts)
     }
 
     pub fn grammar(&self) -> &Grammar {
