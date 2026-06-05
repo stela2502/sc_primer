@@ -1,5 +1,5 @@
 use std::ops::Range;
-
+use std::fmt;
 use crate::error::{PrimerError, PrimerResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +22,22 @@ pub struct PrimerSegment {
     pub ranges: Vec<Range<usize>>,
 }
 
+impl fmt::Display for PrimerSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: ", self.name)?;
+
+        for (idx, range) in self.ranges.iter().enumerate() {
+            if idx > 0 {
+                write!(f, ", ")?;
+            }
+
+            write!(f, "{}..{}", range.start, range.end)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimerMatch {
     pub chemistry_name: String,
@@ -33,6 +49,40 @@ pub struct PrimerMatch {
     pub bd_cell_id: Option<u64>,
     pub cell_seq: Option<Vec<u8>>,
     pub segments: Vec<PrimerSegment>,
+}
+
+
+impl fmt::Display for PrimerMatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "{} {:?} primer={}..{} insert={}..{}",
+            self.chemistry_name,
+            self.orientation,
+            self.primer_start,
+            self.primer_end,
+            self.insert_start,
+            self.insert_end,
+        )?;
+
+        if let Some(id) = self.bd_cell_id {
+            writeln!(f, "  bd_cell_id={id}")?;
+        }
+
+        if let Some(seq) = &self.cell_seq {
+            writeln!(
+                f,
+                "  cell_seq={}",
+                String::from_utf8_lossy(seq)
+            )?;
+        }
+
+        for segment in &self.segments {
+            writeln!(f, "  {segment}")?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<'a> PrimerSlice<'a> {
@@ -172,8 +222,8 @@ pub struct PrimerAttempt {
     pub orientation: Orientation,
     pub ok: bool,
     pub reason: String,
-    pub segments: Vec<PrimerSegmentAttempt>,
     pub cell_seq: Option<String>,
+    pub segments: Vec<PrimerSegmentAttempt>,
 }
 
 #[derive(Debug, Clone)]

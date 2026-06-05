@@ -1,5 +1,6 @@
 pub type PrimerResult<T> = Result<T, String>;
 
+#[derive(Debug)]
 pub struct PrimerError;
 
 impl PrimerError {

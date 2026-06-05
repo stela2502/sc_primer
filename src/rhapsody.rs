@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::error::{PrimerError, PrimerResult};
 
@@ -282,6 +283,31 @@ pub struct RhapsodyCellCall {
     pub umi: (usize, usize),
 }
 
+impl fmt::Display for RhapsodyCellCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "BD {:?} cell_id={} shift={} consumed={} \
+             c1={}..{} c2={}..{} c3={}..{} umi={}..{} \
+             cell={} umi={}",
+            self.version,
+            self.cell_id,
+            self.shift,
+            self.consumed,
+            self.c1.0,
+            self.c1.1,
+            self.c2.0,
+            self.c2.1,
+            self.c3.0,
+            self.c3.1,
+            self.umi.0,
+            self.umi.1,
+            String::from_utf8_lossy(&self.cell_seq),
+            String::from_utf8_lossy(&self.umi_seq),
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RhapsodyWhitelist {
     version: BdCellVersion,
@@ -440,7 +466,7 @@ impl RhapsodyWhitelist {
         None
     }
 
-    pub fn cell_id_to_seq(&self, cell_id:u64 ) -> Option<Vec<u8>> {
+    pub fn cell_id_to_parts_ids(&self, cell_id:u64 ) -> Option<( usize, usize, usize)>{
         if cell_id == 0 {
             return None;
         }
@@ -454,6 +480,13 @@ impl RhapsodyWhitelist {
 
         let c2_idx = (rem / bs) as usize;
         let c3_idx = (rem % bs) as usize;
+
+        Some( (c1_idx, c2_idx, c3_idx) )
+    }
+
+    pub fn cell_id_to_seq(&self, cell_id:u64 ) -> Option<Vec<u8>> {
+        
+        let (c1_idx, c2_idx, c3_idx) = self.cell_id_to_parts_ids( cell_id )?;
 
         let c1 = self.c1.get(c1_idx)?;
         let c2 = self.c2.get(c2_idx)?;
@@ -547,14 +580,12 @@ impl RhapsodyWhitelist {
         Self::index_block(seq, &self.c3_exact, &self.c3_fuzzy, 1)
     }
 
-    pub fn create_primer(
+    pub fn create_cell_cassette(
         &self,
         c1_idx: usize,
         c2_idx: usize,
         c3_idx: usize,
-        umi: &[u8],
     ) -> Vec<u8> {
-
         let (c1s, c2s, c3s) = match self.version {
             BdCellVersion::V1 => (
                 BD_V2_96_C1,
@@ -582,7 +613,7 @@ impl RhapsodyWhitelist {
                 seq.extend_from_slice(c2s[c2_idx]);
                 seq.extend_from_slice(b"AAAAAAAAAAAAA");
                 seq.extend_from_slice(c3s[c3_idx]);
-                seq.extend_from_slice(umi);
+                seq.extend_from_slice(b"A");
             }
 
             BdCellVersion::V2_96 | BdCellVersion::V2_384 => {
@@ -592,7 +623,6 @@ impl RhapsodyWhitelist {
                 seq.extend_from_slice(b"AAAA");
                 seq.extend_from_slice(c3s[c3_idx]);
                 seq.extend_from_slice(b"A");
-                seq.extend_from_slice(umi);
             }
         }
 
@@ -643,6 +673,8 @@ impl RhapsodyWhitelist {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Chemistry, PrimerDetector};
+
 
     fn qual(len: usize) -> Vec<u8> {
         vec![40; len]
@@ -710,4 +742,114 @@ mod tests {
         assert_eq!(call.umi_seq.len(), 6);
         assert_eq!(call.cell_seq.len(), 27);
     }
+
+
+    #[test]
+    fn bd_v2_384_false_positive_stress_test_detect_all() {
+        let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
+
+        let mut seq = Vec::new();
+
+        // Build a worst-case read consisting entirely of valid
+        // whitelist entries but never an intentionally constructed
+        // BD primer.
+
+        for i in 0..2000 {
+            seq.extend_from_slice(BD_V2_386_C1[i % BD_V2_386_C1.len()]);
+            seq.extend_from_slice(BD_V2_386_C2[(i * 7) % BD_V2_386_C2.len()]);
+            seq.extend_from_slice(BD_V2_386_C3[(i * 13) % BD_V2_386_C3.len()]);
+        }
+
+        let qual = vec![b'I'; seq.len()];
+
+        let hits = detector
+            .detect_all(&seq, &qual)
+            .expect("detect_all should not fail");
+
+        let top10 = hits
+            .iter()
+            .take(10)
+            .enumerate()
+            .map(|(i, h)| {
+                let start = h.primer_start.saturating_sub(20);
+                let end = (h.primer_end + 20).min(seq.len());
+
+                format!(
+                    "{i}: {h}\n    seq={}",
+                    String::from_utf8_lossy(&seq[start..end])
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            hits.is_empty(),
+            "false positives detected: n={} top 10:\n{}",
+            hits.len(),
+            top10,
+        );
+    }
+
+    #[test]
+    fn bd_v2_384_detect_all_multimer_with_mutations() {
+        let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
+
+        let mut seq = Vec::new();
+        let mut qual = Vec::new();
+
+        let mut expected_ids = Vec::new();
+
+        for i in 0..100 {
+            let cell_id = (i+1) as u64;
+            let umi = format!("{:06}", i)
+                .replace('0', "A")
+                .replace('1', "C")
+                .replace('2', "G")
+                .replace('3', "T")
+                .into_bytes();
+
+
+            let (c1, c2, c3) = detector
+                .rhapsody.as_ref()
+                .as_ref()
+                .unwrap()
+                .cell_id_to_parts_ids(cell_id).expect("Used a wrong cell id - lib error!");
+
+            let cell_seq_primer = detector.rhapsody.as_ref()
+                .unwrap()
+                .create_cell_cassette( c1, c2, c3);
+
+            let mut primer = detector
+                .grammar()
+                .synthesize(&cell_seq_primer).expect("Primer creation failed!");
+
+            // Add some insert sequence.
+            primer.extend_from_slice(b"GATCGATCGATCGATCGATCGATCGATCG");
+
+            
+            seq.extend_from_slice(&primer);
+            qual.extend(std::iter::repeat(b'I').take(primer.len()));
+
+            expected_ids.push( cell_id);
+        }
+
+        let hits = detector.detect_all(&seq, &qual).unwrap();
+
+        assert_eq!(
+            hits.len(),
+            expected_ids.len(),
+            "expected {} hits, got {}",
+            expected_ids.len(),
+            hits.len()
+        );
+
+        for (i, hit) in hits.iter().enumerate() {
+            assert_eq!(
+                hit.bd_cell_id,
+                Some(expected_ids[i]),
+                "wrong cell id for hit {i}"
+            );
+        }
+    }
+
 }

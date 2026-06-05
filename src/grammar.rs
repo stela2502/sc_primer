@@ -40,6 +40,77 @@ impl Grammar {
         }
         Ok(Self::new(name, ops))
     }
+
+    /// create a fiull blown primer from cell and umi 
+    pub fn synthesize(
+        &self,
+        cell_seq: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let mut seq = Vec::new();
+
+        for op in &self.ops {
+            match op {
+                GrammarOp::Fixed { seq: fixed, .. } => {
+                    seq.extend_from_slice(fixed);
+                }
+
+                GrammarOp::Cell { len } => {
+                    if cell_seq.len() != *len {
+                        return Err(PrimerError::invalid_coordinates(
+                            "cell sequence length does not match grammar",
+                        ));
+                    }
+                    seq.extend_from_slice(cell_seq);
+                }
+
+                GrammarOp::Umi { len } => {
+                    let mut umi = Vec::with_capacity(*len);
+
+                    // Odd-ish stride to avoid taking neighboring bases.
+                    let stride = 7;
+                    let start = cell_seq.len() / 3;
+
+                    for i in 0..*len {
+                        umi.push(cell_seq[(start + i * stride) % cell_seq.len()]);
+                    }
+                    seq.extend_from_slice(&umi);
+                }
+
+                GrammarOp::PolyT { min } => {
+                    seq.extend(std::iter::repeat_n(b'T', *min));
+                }
+
+                GrammarOp::Skip { len } => {
+                    // deterministic synthetic sequence
+                    seq.extend(std::iter::repeat_n(b'A', *len));
+                }
+
+                GrammarOp::Search { .. } => {
+                    // generate the maximum shift
+                    // could become a parameter later
+                    seq.extend(std::iter::repeat_n(b'A', 4));
+                }
+
+                GrammarOp::Insert => {
+                    break;
+                }
+
+                GrammarOp::Tag { len } => {
+                    seq.extend(std::iter::repeat_n(b'A', *len));
+                }
+
+                GrammarOp::Feature { len } => {
+                    seq.extend(std::iter::repeat_n(b'A', *len));
+                }
+
+                GrammarOp::BdCell { .. } => {
+                    seq.extend_from_slice( cell_seq );
+                }
+            }
+        }
+
+        Ok(seq)
+    }
 }
 
 impl GrammarOp {

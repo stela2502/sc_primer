@@ -7,7 +7,7 @@ use crate::rhapsody::{BdCellVersion, RhapsodyWhitelist};
 #[derive(Debug, Clone)]
 pub struct PrimerDetector {
     grammar: Grammar,
-    rhapsody: Option<RhapsodyWhitelist>,
+    pub rhapsody: Option<RhapsodyWhitelist>,
     detect_reverse_complement: bool,
 }
 
