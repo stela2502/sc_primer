@@ -125,7 +125,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "onehot_dna"
 version = "0.1.0"
-source = "git+https://github.com/stela2502/onehot_dna#bffe0c01f7ebaba64c646d7b6ae870747ba1a455"
+source = "git+https://github.com/stela2502/onehot_dna#6e1a93ebe772276834ea8be08155ef9ca655fd53"
 
 [[package]]
 name = "pretty_assertions"

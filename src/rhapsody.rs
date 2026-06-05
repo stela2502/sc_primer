@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{PrimerError, PrimerResult};
 
-use onehot_dna::{encode_candidates, OneHot9};
+use onehot_dna::{OneHot, OneHotSet};
 
 const BD_V2_96_C1: &[&[u8; 9]] = &[ 
     b"GTCGCTATA", b"CTTGTACTA", b"CTTCACATA",
@@ -295,9 +295,9 @@ pub struct RhapsodyWhitelist {
     c2_exact: HashMap<Vec<u8>, u64>,
     c3_exact: HashMap<Vec<u8>, u64>,
 
-    c1_fuzzy: Vec<OneHot9>,
-    c2_fuzzy: Vec<OneHot9>,
-    c3_fuzzy: Vec<OneHot9>,
+    c1_fuzzy: OneHotSet::<9>,
+    c2_fuzzy: OneHotSet::<9>,
+    c3_fuzzy: OneHotSet::<9>,
 }
 
 impl BdCellVersion {
@@ -371,9 +371,9 @@ impl RhapsodyWhitelist {
             c2_exact: Self::make_map(c2s),
             c3_exact: Self::make_map(c3s),
 
-            c1_fuzzy: encode_candidates::<9, _>(c1s).expect("builtin C1 whitelist must encode"),
-            c2_fuzzy: encode_candidates::<9, _>(c2s).expect("builtin C2 whitelist must encode"),
-            c3_fuzzy: encode_candidates::<9, _>(c3s).expect("builtin C3 whitelist must encode"),
+            c1_fuzzy: OneHotSet::<9>::from_sequences(c1s).expect("builtin C1 whitelist must encode"),
+            c2_fuzzy: OneHotSet::<9>::from_sequences(c2s).expect("builtin C2 whitelist must encode"),
+            c3_fuzzy: OneHotSet::<9>::from_sequences(c3s).expect("builtin C3 whitelist must encode"),
         }
     }
 
@@ -522,15 +522,15 @@ impl RhapsodyWhitelist {
     fn index_block(
         seq: &[u8],
         exact: &HashMap<Vec<u8>, u64>,
-        fuzzy: &[OneHot9],
+        fuzzy: &OneHotSet<9>,
         max_mismatches: u32,
     ) -> Option<u64> {
         if let Some(idx) = exact.get(seq) {
             return Some(*idx);
         }
 
-        let obs = OneHot9::from_bytes(seq).ok()?;
-        let (idx, _dist) = obs.best_match(fuzzy, max_mismatches)?;
+        let obs = OneHot::<9>::from_bytes(seq).ok()?;
+        let (idx, _dist) = fuzzy.best_match(&obs, max_mismatches)?;
 
         Some(idx as u64)
     }

@@ -87,7 +87,6 @@ impl PrimerDetector {
                 offset += 1;
                 continue;
             };
-            hit.shift_by(offset);
             let next_offset = hit.primer_end.max(offset + 1);
             hits.push(hit);
             offset = next_offset;

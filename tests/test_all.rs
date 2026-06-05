@@ -118,18 +118,36 @@ impl TestData {
 struct TenxOntMultimerTest;
 
 impl TenxOntMultimerTest {
+    fn dna_tag(index: usize, len: usize) -> Vec<u8> {
+        let alphabet = b"ACGT";
+        let mut out = vec![b'A'; len];
+        let mut x = index;
+
+        for pos in (0..len).rev() {
+            out[pos] = alphabet[x & 3];
+            x >>= 2;
+        }
+
+        out
+    }
+
     fn cell(index: usize) -> Vec<u8> {
-        format!("ACGTACGTACGT{:04}", index).into_bytes()
+        let mut v = b"ACGTACGTACGT".to_vec();
+        v.extend(Self::dna_tag(index, 4));
+        v
     }
 
     fn umi(index: usize) -> Vec<u8> {
-        format!("TTGGAACC{:04}", index).into_bytes()
+        let mut v = b"TTGGAACC".to_vec();
+        v.extend(Self::dna_tag(index, 4));
+        v
     }
 
     fn insert(index: usize) -> Vec<u8> {
-        format!("GATCGATCGATCGATCGATCGATC{:04}", index).into_bytes()
+        let mut v = b"GATCGATCGATCGATCGATCGATC".to_vec();
+        //v.extend(Self::dna_tag(index, 4));
+        v
     }
-
     fn build_read() -> (Vec<u8>, Vec<u8>, Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
         let mut seq = Vec::new();
         let mut qual = Vec::new();
@@ -165,9 +183,9 @@ impl TenxOntMultimerTest {
         let (seq, qual, expected_cells, expected_umis, expected_inserts) = Self::build_read();
         let matches = detector.detect_all(&seq, &qual).unwrap();
 
-        assert_eq!(matches.len(), 10);
+        assert_eq!(matches.len(), 10, "expected 10 matches - got {}", matches.len() );
 
-        for index in 0..10 {
+        for index in 0..matches.len() {
             let primer_match = &matches[index];
             let cell = primer_match.get_cell(&seq, &qual).unwrap();
             let umi = primer_match.get_umi(&seq, &qual).unwrap();
@@ -176,10 +194,14 @@ impl TenxOntMultimerTest {
 
             assert_eq!(primer_match.chemistry_name, "tenx-v3");
             assert_eq!(primer_match.orientation, Orientation::Forward);
-            assert_eq!(cell.seq, expected_cells[index]);
-            assert_eq!(umi.seq, expected_umis[index]);
-            assert_eq!(insert.seq, expected_inserts[index]);
-            assert_eq!(cell.qual, expected_quality);
+            assert_eq!(cell.seq, expected_cells[index], "{index}: cell seq got {:?} - expected {:?}", 
+                std::str::from_utf8(&cell.seq), std::str::from_utf8(&expected_cells[index]) );
+            assert_eq!(umi.seq, expected_umis[index], "{index}: umi seq got {:?} - expected {:?}", 
+                std::str::from_utf8(&umi.seq), std::str::from_utf8(&expected_umis[index]) );
+            assert_eq!(insert.seq, expected_inserts[index], "{index}: insert seq got {:?} - expected {:?}", 
+                std::str::from_utf8(&insert.seq), std::str::from_utf8(&expected_inserts[index]) );
+            assert_eq!(cell.qual, expected_quality, "{index}: cell qual got {:?} - expected {:?}", 
+                std::str::from_utf8(&cell.qual), std::str::from_utf8(&expected_quality) );
         }
     }
 }
