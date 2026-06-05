@@ -514,9 +514,59 @@ impl RhapsodyWhitelist {
             return None;
         }
 
-        let c1_idx = self.index_c1(&seq[c1.0..c1.1])?;
-        let c2_idx = self.index_c2(&seq[c2.0..c2.1])?;
-        let c3_idx = self.index_c3(&seq[c3.0..c3.1])?;
+        let c1_exact = Self::index_block_fast(
+            &seq[c1.0..c1.1],
+            &self.c1_exact,
+            &self.c1_fuzzy,
+            2,
+        );
+
+        let c2_exact = Self::index_block_fast(
+            &seq[c2.0..c2.1],
+            &self.c2_exact,
+            &self.c2_fuzzy,
+            2,
+        );
+
+        let c3_exact = Self::index_block_fast(
+            &seq[c3.0..c3.1],
+            &self.c3_exact,
+            &self.c3_fuzzy,
+            2,
+        );
+
+
+        let missing =
+            c1_exact.is_none() as u8 +
+            c2_exact.is_none() as u8 +
+            c3_exact.is_none() as u8;
+
+
+        let (c1_idx, c2_idx, c3_idx) = match missing {
+            0 => (
+                c1_exact.unwrap(),
+                c2_exact.unwrap(),
+                c3_exact.unwrap(),
+            ),
+
+            1 => (
+                match c1_exact {
+                    Some(v) => v,
+                    None => self.index_c1(&seq[c1.0..c1.1])?,
+                },
+                match c2_exact {
+                    Some(v) => v,
+                    None => self.index_c2(&seq[c2.0..c2.1])?,
+                },
+                match c3_exact {
+                    Some(v) => v,
+                    None => self.index_c3(&seq[c3.0..c3.1])?,
+                },
+            ),
+
+            _ => return None,
+        };
+
 
         let cell_id =
             c1_idx * self.block_size * self.block_size +
@@ -527,9 +577,9 @@ impl RhapsodyWhitelist {
         let mut cell_seq = Vec::with_capacity(27);
         let mut cell_qual = Vec::with_capacity(27);
 
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c1);
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c2);
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c3);
+        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c1, Some(&self.c1[c1_idx as usize]) );
+        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c2, Some(&self.c1[c2_idx as usize]) );
+        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c3, Some(&self.c1[c3_idx as usize]) );
 
         Some(RhapsodyCellCall {
             version: self.version,
@@ -551,8 +601,9 @@ impl RhapsodyWhitelist {
         c1 * self.block_size * self.block_size + c2 * self.block_size + c3 + 1
     }
 
+
     #[inline]
-    fn index_block(
+    fn index_block_fast(
         seq: &[u8],
         exact: &HashMap<Vec<u8>, u64>,
         fuzzy: &OneHotSet<9>,
@@ -561,6 +612,16 @@ impl RhapsodyWhitelist {
         if let Some(idx) = exact.get(seq) {
             return Some(*idx);
         }
+        None
+    }
+
+    #[inline]
+    fn index_block_slow(
+        seq: &[u8],
+        exact: &HashMap<Vec<u8>, u64>,
+        fuzzy: &OneHotSet<9>,
+        max_mismatches: u32,
+    ) -> Option<u64> {
 
         let obs = OneHot::<9>::from_bytes(seq).ok()?;
         let (idx, _dist) = fuzzy.best_match(&obs, max_mismatches)?;
@@ -569,15 +630,15 @@ impl RhapsodyWhitelist {
     }
 
     pub fn index_c1(&self, seq: &[u8]) -> Option<u64> {
-        Self::index_block(seq, &self.c1_exact, &self.c1_fuzzy, 1)
+        Self::index_block_fast(seq, &self.c1_exact, &self.c1_fuzzy, 1)
     }
 
     pub fn index_c2(&self, seq: &[u8]) -> Option<u64> {
-        Self::index_block(seq, &self.c2_exact, &self.c2_fuzzy, 1)
+        Self::index_block_fast(seq, &self.c2_exact, &self.c2_fuzzy, 1)
     }
 
     pub fn index_c3(&self, seq: &[u8]) -> Option<u64> {
-        Self::index_block(seq, &self.c3_exact, &self.c3_fuzzy, 1)
+        Self::index_block_fast(seq, &self.c3_exact, &self.c3_fuzzy, 1)
     }
 
     pub fn create_cell_cassette(
@@ -664,8 +725,13 @@ impl RhapsodyWhitelist {
         seq: &[u8],
         qual: &[u8],
         range: (usize, usize),
+        corrected: Option<&[u8; 9]>,
     ) {
-        cell_seq.extend_from_slice(&seq[range.0..range.1]);
+        match corrected {
+            Some(block) => cell_seq.extend_from_slice(block),
+            None => cell_seq.extend_from_slice(&seq[range.0..range.1]),
+        }
+
         cell_qual.extend_from_slice(&qual[range.0..range.1]);
     }
 }
