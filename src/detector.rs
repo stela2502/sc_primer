@@ -116,6 +116,10 @@ impl PrimerDetector {
                         orientation: Orientation::Forward,
                         ok: true,
                         reason: "matched".to_string(),
+                        cell_seq: hit
+                            .cell_seq
+                            .as_ref()
+                            .map(|seq| String::from_utf8_lossy(seq).to_string()),
                         segments: hit
                             .segments
                             .iter()
@@ -141,6 +145,7 @@ impl PrimerDetector {
                         orientation: Orientation::Forward,
                         ok: false,
                         reason: "no complete primer match".to_string(),
+                        cell_seq: None,
                         segments: Vec::new(),
                     });
                 }
@@ -204,11 +209,17 @@ impl PrimerDetector {
                     let Some(rhapsody) = &self.rhapsody else { return Ok(None); };
                     if rhapsody.version() != *version { return Ok(None); }
                     let Some(call) = rhapsody.call(seq, qual, pos, search.0, search.1) else { return Ok(None); };
+
                     primer_match.bd_cell_id = Some(call.cell_id);
+                    if let Some(seq) = rhapsody.cell_id_to_seq( call.cell_id ){
+                        primer_match.add_cell_seq( seq );
+                    }
+
                     primer_match.add_segment_ranges(
                         "BD_CELL",
                         vec![call.c1.0..call.c1.1, call.c2.0..call.c2.1, call.c3.0..call.c3.1],
                     );
+
                     primer_match.add_segment("UMI", call.umi.0..call.umi.1);
                     pos = call.consumed;
                     search = (0, 0);

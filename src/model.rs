@@ -31,6 +31,7 @@ pub struct PrimerMatch {
     pub insert_start: usize,
     pub insert_end: usize,
     pub bd_cell_id: Option<u64>,
+    pub cell_seq: Option<Vec<u8>>,
     pub segments: Vec<PrimerSegment>,
 }
 
@@ -95,11 +96,16 @@ impl PrimerMatch {
             insert_start: 0,
             insert_end: 0,
             bd_cell_id: None,
+            cell_seq: None,
             segments: Vec::new(),
         }
     }
 
-    pub fn add_segment(&mut self, name: &str, range: Range<usize>) {
+    pub fn add_cell_seq(&mut self, cell_seq: impl AsRef<[u8]>) {
+        self.cell_seq = Some(cell_seq.as_ref().to_vec());
+    }
+
+    pub fn add_segment(&mut self, name: impl Into<String>, range: Range<usize>) {
         self.segments.push(PrimerSegment::new(name, vec![range]));
     }
 
@@ -167,6 +173,7 @@ pub struct PrimerAttempt {
     pub ok: bool,
     pub reason: String,
     pub segments: Vec<PrimerSegmentAttempt>,
+    pub cell_seq: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -46,15 +46,19 @@ fn main() -> Result<(), String> {
 
     for attempt in &attempts {
 
-        if attempt.ok && attempt.offset > 0 {
+        if attempt.ok {
             let prefix = std::str::from_utf8(&seq[..attempt.offset])
                 .unwrap_or("<non-utf8>");
-
+            let cell_seq = match &attempt.cell_seq{
+                Some(seq) => seq,
+                None => &String::new(),
+            };
             println!(
-                "  prefix: {}bp [0..{}] {}",
+                "  prefix: {}bp [0..{}] {}\n  cell_seq: {}", 
+                prefix,
                 attempt.offset,
                 attempt.offset,
-                prefix
+                cell_seq,
             );
         }
 
@@ -87,13 +91,13 @@ fn main() -> Result<(), String> {
             );
         }
 
-        println!();
+        //println!();
     }
 
     if matched == 0 {
         println!("summary: no complete primer match");
     } else {
-        println!("summary: {matched} complete primer match(es)");
+        println!("summary: {matched} complete primer match(es)\n");
     }
 
     Ok(())

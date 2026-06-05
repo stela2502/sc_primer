@@ -115,8 +115,7 @@ const BD_V2_386_C1: &[&[u8; 9]] = &[
     b"CGGAGAGAT", b"CGCTAATAG", b"CGCGTTGGC", b"CGCGCAGAG", b"CGCACTGCC", b"CCTTGTCTC",
     b"CCTTGGCGT", b"CCTTCTGAG", b"CCTTCTCCT", b"CCTTCGACC", b"CCTTACTTG", b"CCTGTTCGT",
     b"CCTGTATGC", b"CCTCGGCCG", b"CCGTTAATT", b"CCATGTGCG", b"CCAGTGGTT", b"CCAGGCATT",
-    b"CCAGGATCC", b"CCAGCGTTG", b"CATTCCGAT", b"CATTATACC", b"CATGTTGAG", b"ATTGCGTGT",
-    b"ATTGCGGAC", b"ATTGCGCCG", b"ATTGACTTG", b"ATTCGGCTG", b"ATTCGCGAG", b"ATTCCAAGT",
+    b"CCAGGATCC", b"CCAGCGTTG", b"CATTCCGAT", b"CATTATACC", b"CATGTTGAG", b"ATTGCGTGT",b"ATTGCGGAC", b"ATTGCGCCG", b"ATTGACTTG", b"ATTCGGCTG", b"ATTCGCGAG", b"ATTCCAAGT",
     b"ATTATCTTC", b"ATTACTGTT", b"ATTACACTC", b"ATGTTCTAT", b"ATGTTACGC", b"ATGTGTATC",
     b"ATGTGGCAG", b"ATGTCTGTG", b"ATGGTGCAT", b"ATGCTTACT", b"ATGCTGTCC", b"ATGCTCGGC",
     b"ATGAGGTTC", b"ATGAGAGTG", b"ATCTTGGCT", b"ATCTGTGCG", b"ATCGGTTCC", b"ATCATGCTC",
@@ -288,6 +287,10 @@ pub struct RhapsodyWhitelist {
     version: BdCellVersion,
     block_size: u64,
 
+    c1: &'static [ &'static[u8; 9]],
+    c2: &'static [ &'static[u8; 9]],
+    c3: &'static [ &'static[u8; 9]],
+
     c1_exact: HashMap<Vec<u8>, u64>,
     c2_exact: HashMap<Vec<u8>, u64>,
     c3_exact: HashMap<Vec<u8>, u64>,
@@ -352,13 +355,18 @@ impl RhapsodyCellCall {
 impl RhapsodyWhitelist {
     pub fn new(
         version: BdCellVersion,
-        c1s: &[&[u8; 9]],
-        c2s: &[&[u8; 9]],
-        c3s: &[&[u8; 9]],
+        c1s: &'static [&'static [u8; 9]],
+        c2s: &'static [&'static [u8; 9]],
+        c3s: &'static [&'static [u8; 9]],
     ) -> Self {
         Self {
             version,
             block_size: version.block_size(),
+
+            c1: c1s,
+            c2: c2s,
+            c3: c3s,
+
             c1_exact: Self::make_map(c1s),
             c2_exact: Self::make_map(c2s),
             c3_exact: Self::make_map(c3s),
@@ -430,6 +438,33 @@ impl RhapsodyWhitelist {
             }
         }
         None
+    }
+
+    pub fn cell_id_to_seq(&self, cell_id:u64 ) -> Option<Vec<u8>> {
+        if cell_id == 0 {
+            return None;
+        }
+
+        let id = cell_id - 1;
+        let bs = self.block_size as u64;
+
+        let c1_idx = (id / (bs * bs)) as usize;
+
+        let rem = id % (bs * bs);
+
+        let c2_idx = (rem / bs) as usize;
+        let c3_idx = (rem % bs) as usize;
+
+        let c1 = self.c1.get(c1_idx)?;
+        let c2 = self.c2.get(c2_idx)?;
+        let c3 = self.c3.get(c3_idx)?;
+
+        let mut seq = Vec::with_capacity(27);
+        seq.extend_from_slice(*c1);
+        seq.extend_from_slice(*c2);
+        seq.extend_from_slice(*c3);
+
+        Some(seq)
     }
 
     pub fn call_exact_shift(
