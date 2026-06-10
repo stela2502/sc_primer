@@ -1,15 +1,10 @@
-use super::{
-    RhapsodyWhitelist,
-    TenxWhitelist,
-    CellIdGenerator
-};
+use super::{CellIdGenerator, RhapsodyWhitelist, TenxWhitelist};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SingleCellSystem {
     Rhapsody(RhapsodyWhitelist),
     Tenx(TenxWhitelist),
 }
-
 
 impl CellIdGenerator for SingleCellSystem {
     fn cell_seq_for_index(&self, allocation_index: u64) -> Option<Vec<u8>> {
@@ -26,3 +21,5 @@ impl CellIdGenerator for SingleCellSystem {
         }
     }
 }
+
+pub type Range = (usize, usize);

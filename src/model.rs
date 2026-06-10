@@ -1,6 +1,6 @@
-use std::ops::Range;
-use std::fmt;
 use crate::error::{PrimerError, PrimerResult};
+use std::fmt;
+use std::ops::Range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Orientation {
@@ -51,7 +51,6 @@ pub struct PrimerMatch {
     pub segments: Vec<PrimerSegment>,
 }
 
-
 impl fmt::Display for PrimerMatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -70,11 +69,7 @@ impl fmt::Display for PrimerMatch {
         }
 
         if let Some(seq) = &self.cell_seq {
-            writeln!(
-                f,
-                "  cell_seq={}",
-                String::from_utf8_lossy(seq)
-            )?;
+            writeln!(f, "  cell_seq={}", String::from_utf8_lossy(seq))?;
         }
 
         for segment in &self.segments {
@@ -87,11 +82,16 @@ impl fmt::Display for PrimerMatch {
 
 impl<'a> PrimerSlice<'a> {
     pub fn new(seq: Vec<u8>, qual: Vec<u8>) -> Self {
-        Self { seq, qual, source_seq: None, source_qual: None }
+        Self {
+            seq,
+            qual,
+            source_seq: None,
+            source_qual: None,
+        }
     }
 
     pub fn from_range(seq: &'a [u8], qual: &'a [u8], range: Range<usize>) -> PrimerResult<Self> {
-        Self::check_inputs(seq, qual, &[range.clone()])?;
+        Self::check_inputs(seq, qual, std::slice::from_ref(&range))?;
         Ok(Self {
             seq: seq[range.clone()].to_vec(),
             qual: qual[range].to_vec(),
@@ -100,7 +100,11 @@ impl<'a> PrimerSlice<'a> {
         })
     }
 
-    pub fn from_ranges(seq: &'a [u8], qual: &'a [u8], ranges: &[Range<usize>]) -> PrimerResult<Self> {
+    pub fn from_ranges(
+        seq: &'a [u8],
+        qual: &'a [u8],
+        ranges: &[Range<usize>],
+    ) -> PrimerResult<Self> {
         Self::check_inputs(seq, qual, ranges)?;
         let len = ranges.iter().map(|range| range.end - range.start).sum();
         let mut out_seq = Vec::with_capacity(len);
@@ -109,12 +113,19 @@ impl<'a> PrimerSlice<'a> {
             out_seq.extend_from_slice(&seq[range.clone()]);
             out_qual.extend_from_slice(&qual[range.clone()]);
         }
-        Ok(Self { seq: out_seq, qual: out_qual, source_seq: None, source_qual: None })
+        Ok(Self {
+            seq: out_seq,
+            qual: out_qual,
+            source_seq: None,
+            source_qual: None,
+        })
     }
 
     pub fn check_inputs(seq: &[u8], qual: &[u8], ranges: &[Range<usize>]) -> PrimerResult<()> {
         if seq.len() != qual.len() {
-            return Err(PrimerError::invalid_coordinates("sequence and quality have different lengths"));
+            return Err(PrimerError::invalid_coordinates(
+                "sequence and quality have different lengths",
+            ));
         }
         for range in ranges {
             if range.start > range.end || range.end > seq.len() {
@@ -132,7 +143,10 @@ impl<'a> PrimerSlice<'a> {
 
 impl PrimerSegment {
     pub fn new(name: impl Into<String>, ranges: Vec<Range<usize>>) -> Self {
-        Self { name: name.into(), ranges }
+        Self {
+            name: name.into(),
+            ranges,
+        }
     }
 }
 
@@ -164,7 +178,8 @@ impl PrimerMatch {
     }
 
     pub fn get_cell<'a>(&self, seq: &'a [u8], qual: &'a [u8]) -> PrimerResult<PrimerSlice<'a>> {
-        self.get_segment(seq, qual, "CELL").or_else(|_| self.get_segment(seq, qual, "BD_CELL"))
+        self.get_segment(seq, qual, "CELL")
+            .or_else(|_| self.get_segment(seq, qual, "BD_CELL"))
     }
 
     pub fn get_umi<'a>(&self, seq: &'a [u8], qual: &'a [u8]) -> PrimerResult<PrimerSlice<'a>> {
@@ -175,9 +190,16 @@ impl PrimerMatch {
         PrimerSlice::from_range(seq, qual, self.insert_start..self.insert_end)
     }
 
-    pub fn get_segment<'a>(&self, seq: &'a [u8], qual: &'a [u8], name: &str) -> PrimerResult<PrimerSlice<'a>> {
+    pub fn get_segment<'a>(
+        &self,
+        seq: &'a [u8],
+        qual: &'a [u8],
+        name: &str,
+    ) -> PrimerResult<PrimerSlice<'a>> {
         let Some(segment) = self.segments.iter().find(|segment| segment.name == name) else {
-            return Err(PrimerError::invalid_coordinates(format!("segment '{name}' is not present")));
+            return Err(PrimerError::invalid_coordinates(format!(
+                "segment '{name}' is not present"
+            )));
         };
         PrimerSlice::from_ranges(seq, qual, &segment.ranges)
     }
@@ -214,7 +236,6 @@ impl PrimerMatch {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct PrimerAttempt {

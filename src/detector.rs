@@ -1,17 +1,17 @@
 use crate::chemistry::Chemistry;
 use crate::error::{PrimerError, PrimerResult};
 use crate::grammar::{Grammar, GrammarOp};
-use crate::model::{Orientation, PrimerMatch, PrimerAttempt, PrimerSegmentAttempt};
+use crate::model::{Orientation, PrimerAttempt, PrimerMatch, PrimerSegmentAttempt};
 
 use crate::single_cell_systems::*;
 
-use read_tag_table::ReadTagRecord;
 use int_to_str::IntToStr;
+use read_tag_table::ReadTagRecord;
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs::File;
-use std::io::{Write, BufWriter};
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct PrimerDetector {
@@ -52,10 +52,7 @@ impl PrimerDetector {
     /// If the incoming cell/UMI lengths match the grammar, reuse them.
     /// Otherwise translate the source cell to a stable generated target cell
     /// and generate a fresh/random UMI of the grammar UMI length.
-    pub fn generate(
-        &mut self,
-        data: &ReadTagRecord,
-    ) -> PrimerResult<(Vec<u8>, Vec<u8>)> {
+    pub fn generate(&mut self, data: &ReadTagRecord) -> PrimerResult<(Vec<u8>, Vec<u8>)> {
         let target_cell = self.get_or_create_export_cell(&data.cell_seq)?;
         let target_umi = self.get_or_create_export_umi(&data.umi_seq)?;
 
@@ -64,11 +61,7 @@ impl PrimerDetector {
         Ok((target_cell, primer))
     }
 
-
-    fn get_or_create_export_umi(
-        &mut self,
-        source_umi: &[u8],
-    ) -> PrimerResult<Vec<u8>> {
+    fn get_or_create_export_umi(&mut self, source_umi: &[u8]) -> PrimerResult<Vec<u8>> {
         if source_umi.len() == self.grammar.umi_len() {
             return Ok(source_umi.to_vec());
         }
@@ -83,11 +76,9 @@ impl PrimerDetector {
             index
         };
 
-        Ok(
-            IntToStr::from_u64(target_index as u64)
-                .to_string(self.grammar.umi_len())
-                .into_bytes()
-        )
+        Ok(IntToStr::from_u64(target_index as u64)
+            .to_string(self.grammar.umi_len())
+            .into_bytes())
     }
 
     pub fn primer_translation(&self) -> &HashMap<u64, (u64, usize)> {
@@ -96,10 +87,7 @@ impl PrimerDetector {
 
     /// Creates a tab separated file:
     /// old_cell_id <tab> new_cell_id <tab> reads_detected
-    pub fn save_cell_translation_table<P: AsRef<Path>>(
-        &self,
-        path: P,
-    ) -> std::io::Result<()> {
+    pub fn save_cell_translation_table<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let file = File::create(path)?;
         let mut out = BufWriter::new(file);
 
@@ -118,10 +106,7 @@ impl PrimerDetector {
         Ok(())
     }
 
-    fn get_or_create_export_cell(
-        &mut self,
-        source_cell: &[u8],
-    ) -> PrimerResult<Vec<u8>> {
+    fn get_or_create_export_cell(&mut self, source_cell: &[u8]) -> PrimerResult<Vec<u8>> {
         // Already valid in the target system? Use it as-is.
         if source_cell.len() == self.grammar.cell_len() {
             if let Some(system) = &self.single_cell_system {
@@ -136,40 +121,33 @@ impl PrimerDetector {
         // Otherwise translate source seq -> source id -> target allocation index.
         let source_id = IntToStr::new(source_cell).into_u64();
 
-        let target_index = if let Some((target_index, count)) =
-            self.primer_translation.get_mut(&source_id)
-        {
-            *count += 1;
-            *target_index
-        } else {
-            let target_index = self.primer_translation.len() as u64;
+        let target_index =
+            if let Some((target_index, count)) = self.primer_translation.get_mut(&source_id) {
+                *count += 1;
+                *target_index
+            } else {
+                let target_index = self.primer_translation.len() as u64;
 
-            self.primer_translation.insert(
-                source_id,
-                (target_index, 1),
-            );
+                self.primer_translation.insert(source_id, (target_index, 1));
 
-            target_index
-        };
+                target_index
+            };
 
         self.cell_seq_for_target_index(target_index)
     }
 
-    fn cell_seq_for_target_index(
-        &self,
-        target_index: u64,
-    ) -> PrimerResult<Vec<u8>> {
+    fn cell_seq_for_target_index(&self, target_index: u64) -> PrimerResult<Vec<u8>> {
         if let Some(system) = &self.single_cell_system {
-            return system
-                .cell_seq_for_index(target_index)
-                .ok_or_else(|| {
-                    PrimerError::invalid_coordinates(
-                        format!("single-cell whitelist exhausted at index {target_index}")
-                    )
-                });
+            return system.cell_seq_for_index(target_index).ok_or_else(|| {
+                PrimerError::invalid_coordinates(format!(
+                    "single-cell whitelist exhausted at index {target_index}"
+                ))
+            });
         }
 
-        Ok (IntToStr::from_u64(target_index).to_string(self.grammar.cell_len() ).into_bytes() )
+        Ok(IntToStr::from_u64(target_index)
+            .to_string(self.grammar.cell_len())
+            .into_bytes())
     }
 
     pub fn detect_first(&self, seq: &[u8], qual: &[u8]) -> PrimerResult<Option<PrimerMatch>> {
@@ -301,11 +279,22 @@ impl PrimerDetector {
         &self.grammar
     }
 
-    pub fn detect_one_orientation(&self, seq: &[u8], qual: &[u8], orientation: Orientation) -> PrimerResult<Option<PrimerMatch>> {
+    pub fn detect_one_orientation(
+        &self,
+        seq: &[u8],
+        qual: &[u8],
+        orientation: Orientation,
+    ) -> PrimerResult<Option<PrimerMatch>> {
         self.try_from_start(seq, qual, 0, orientation)
     }
 
-    pub fn try_from_start(&self, seq: &[u8], qual: &[u8], start: usize, orientation: Orientation) -> PrimerResult<Option<PrimerMatch>> {
+    pub fn try_from_start(
+        &self,
+        seq: &[u8],
+        qual: &[u8],
+        start: usize,
+        orientation: Orientation,
+    ) -> PrimerResult<Option<PrimerMatch>> {
         let mut primer_match = PrimerMatch::new(self.grammar.name.clone(), orientation);
         primer_match.primer_start = start;
         let mut pos = start;
@@ -313,25 +302,36 @@ impl PrimerDetector {
 
         for op in &self.grammar.ops {
             match op {
-                GrammarOp::Fixed { seq: fixed, mismatches } => {
+                GrammarOp::Fixed {
+                    seq: fixed,
+                    mismatches,
+                } => {
                     let chosen = Self::find_fixed(seq, pos, fixed, *mismatches, search)?;
-                    let Some(next_pos) = chosen else { return Ok(None); };
+                    let Some(next_pos) = chosen else {
+                        return Ok(None);
+                    };
                     pos = next_pos + fixed.len();
                     search = (0, 0);
                 }
                 GrammarOp::Cell { len } => {
-                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
+                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) {
+                        return Ok(None);
+                    }
                     primer_match.add_segment("CELL", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::Umi { len } => {
-                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
+                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) {
+                        return Ok(None);
+                    }
                     primer_match.add_segment("UMI", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::PolyT { min } => {
                     let count = Self::count_base(seq, pos, b'T');
-                    if count < *min { return Ok(None); }
+                    if count < *min {
+                        return Ok(None);
+                    }
                     pos += count;
                 }
                 GrammarOp::Insert => {
@@ -341,14 +341,17 @@ impl PrimerDetector {
                     return Ok(Some(primer_match));
                 }
                 GrammarOp::Skip { len } => {
-                    if !Self::has_range(seq, pos, *len) { return Ok(None); }
+                    if !Self::has_range(seq, pos, *len) {
+                        return Ok(None);
+                    }
                     pos += *len;
                 }
                 GrammarOp::Search { start, end } => {
                     search = (*start, *end);
                 }
                 GrammarOp::BdCell { version } => {
-                    let Some(SingleCellSystem::Rhapsody(rhapsody)) = &self.single_cell_system else {
+                    let Some(SingleCellSystem::Rhapsody(rhapsody)) = &self.single_cell_system
+                    else {
                         return Ok(None);
                     };
 
@@ -388,17 +391,21 @@ impl PrimerDetector {
                     }
 
                     primer_match.add_segment("CELL", pos..pos + len);
-                    primer_match.add_cell_seq(seq[pos..pos + len].to_vec());
+                    primer_match.add_cell_seq(&seq[pos..pos + len]);
 
                     pos += len;
                 }
                 GrammarOp::Tag { len } => {
-                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
+                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) {
+                        return Ok(None);
+                    }
                     primer_match.add_segment("TAG", pos..pos + *len);
                     pos += *len;
                 }
                 GrammarOp::Feature { len } => {
-                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) { return Ok(None); }
+                    if !Self::has_range(seq, pos, *len) || !Self::has_range(qual, pos, *len) {
+                        return Ok(None);
+                    }
                     primer_match.add_segment("FEATURE", pos..pos + *len);
                     pos += *len;
                 }
@@ -431,11 +438,19 @@ impl PrimerDetector {
         seq.iter().skip(start).take_while(|b| **b == base).count()
     }
 
-    pub fn find_fixed(seq: &[u8], pos: usize, fixed: &[u8], mismatches: usize, search: (usize, usize)) -> PrimerResult<Option<usize>> {
+    pub fn find_fixed(
+        seq: &[u8],
+        pos: usize,
+        fixed: &[u8],
+        mismatches: usize,
+        search: (usize, usize),
+    ) -> PrimerResult<Option<usize>> {
         let start = pos + search.0;
         let end = pos + search.1;
         for candidate in start..=end {
-            if !Self::has_range(seq, candidate, fixed.len()) { continue; }
+            if !Self::has_range(seq, candidate, fixed.len()) {
+                continue;
+            }
             if Self::hamming(&seq[candidate..candidate + fixed.len()], fixed)? <= mismatches {
                 return Ok(Some(candidate));
             }
@@ -445,9 +460,15 @@ impl PrimerDetector {
 
     pub fn hamming(left: &[u8], right: &[u8]) -> PrimerResult<usize> {
         if left.len() != right.len() {
-            return Err(PrimerError::invalid_coordinates("hamming requires equal lengths"));
+            return Err(PrimerError::invalid_coordinates(
+                "hamming requires equal lengths",
+            ));
         }
-        Ok(left.iter().zip(right.iter()).filter(|(a, b)| a != b).count())
+        Ok(left
+            .iter()
+            .zip(right.iter())
+            .filter(|(a, b)| a != b)
+            .count())
     }
 
     pub fn reverse(seq: &[u8]) -> Vec<u8> {
@@ -471,6 +492,4 @@ impl PrimerDetector {
     pub fn version_from_bd_op(version: BdCellVersion) -> BdCellVersion {
         version
     }
-
-
 }

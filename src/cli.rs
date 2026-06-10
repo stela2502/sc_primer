@@ -1,6 +1,6 @@
 use clap::Args;
 
-use crate::{Chemistry, PrimerDetector, Grammar};
+use crate::{Chemistry, Grammar, PrimerDetector};
 
 #[derive(Debug, Clone, Args)]
 pub struct PrimerCli {

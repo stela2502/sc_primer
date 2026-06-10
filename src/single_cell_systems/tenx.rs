@@ -5,19 +5,16 @@ use std::io::Read;
 use flate2::read::GzDecoder;
 
 use crate::error::{PrimerError, PrimerResult};
+use crate::single_cell_systems::models::Range;
 use crate::single_cell_systems::CellIdGenerator;
 
-static TENX_3M_FEBRUARY_2018: &[u8] =
-    include_bytes!("whitelists/3M-february-2018.txt.gz");
+static TENX_3M_FEBRUARY_2018: &[u8] = include_bytes!("whitelists/3M-february-2018.txt.gz");
 
-static TENX_737K_APRIL_2014_RC: &[u8] =
-    include_bytes!("whitelists/737k-april-2014_rc.txt.gz");
+static TENX_737K_APRIL_2014_RC: &[u8] = include_bytes!("whitelists/737k-april-2014_rc.txt.gz");
 
-static TENX_737K_AUGUST_2016: &[u8] =
-    include_bytes!("whitelists/737k-august-2016.txt.gz");
+static TENX_737K_AUGUST_2016: &[u8] = include_bytes!("whitelists/737k-august-2016.txt.gz");
 
-static TENX_737K_ARC_V1: &[u8] =
-    include_bytes!("whitelists/737K-arc-v1.txt.gz");
+static TENX_737K_ARC_V1: &[u8] = include_bytes!("whitelists/737K-arc-v1.txt.gz");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TenxVersion {
@@ -29,6 +26,11 @@ pub enum TenxVersion {
     MultiomeArcV1,
 }
 
+pub struct TenxCoords {
+    pub cell: Range,
+    pub umi: Range,
+    pub consumed: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct TenxCellCall {
@@ -53,42 +55,23 @@ pub struct TenxWhitelist {
 impl TenxVersion {
     pub fn parse(raw: &str) -> PrimerResult<Self> {
         match raw.to_ascii_lowercase().as_str() {
+            "3pv1" | "3-prime-v1" | "chromium-single-cell-3-prime-v1" => Ok(Self::ThreePrimeV1),
 
-            "3pv1"
-            | "3-prime-v1"
-            | "chromium-single-cell-3-prime-v1"
-                => Ok(Self::ThreePrimeV1),
+            "3pv2" | "3-prime-v2" | "chromium-single-cell-3-prime-v2" => Ok(Self::ThreePrimeV2),
 
-            "3pv2"
-            | "3-prime-v2"
-            | "chromium-single-cell-3-prime-v2"
-                => Ok(Self::ThreePrimeV2),
+            "3pv3" | "3-prime-v3" | "chromium-single-cell-3-prime-v3" => Ok(Self::ThreePrimeV3),
 
-            "3pv3"
-            | "3-prime-v3"
-            | "chromium-single-cell-3-prime-v3"
-                => Ok(Self::ThreePrimeV3),
+            "3pv4" | "3-prime-v4" | "chromium-single-cell-3-prime-v4" => Ok(Self::ThreePrimeV4),
 
-            "3pv4"
-            | "3-prime-v4"
-            | "chromium-single-cell-3-prime-v4"
-                => Ok(Self::ThreePrimeV4),
+            "5p" | "5-prime" | "chromium-single-cell-5-prime" => Ok(Self::FivePrime),
 
-            "5p"
-            | "5-prime"
-            | "chromium-single-cell-5-prime"
-                => Ok(Self::FivePrime),
+            "arc" | "arc-v1" | "chromium-single-cell-multiome-atac-gene-expression" => {
+                Ok(Self::MultiomeArcV1)
+            }
 
-            "arc"
-            | "arc-v1"
-            | "chromium-single-cell-multiome-atac-gene-expression"
-                => Ok(Self::MultiomeArcV1),
-
-            other => Err(
-                PrimerError::invalid_grammar(
-                    format!("unknown 10x chemistry '{other}'")
-                )
-            ),
+            other => Err(PrimerError::invalid_grammar(format!(
+                "unknown 10x chemistry '{other}'"
+            ))),
         }
     }
 
@@ -157,9 +140,9 @@ impl TenxWhitelist {
         let mut decoder = GzDecoder::new(bytes);
         let mut text = String::new();
 
-        decoder
-            .read_to_string(&mut text)
-            .map_err(|e| PrimerError::invalid_grammar(format!("failed to read 10x whitelist: {e}")))?;
+        decoder.read_to_string(&mut text).map_err(|e| {
+            PrimerError::invalid_grammar(format!("failed to read 10x whitelist: {e}"))
+        })?;
 
         Ok(Self::from_text(version, &text))
     }
@@ -214,20 +197,23 @@ impl TenxWhitelist {
         self.cells.get(idx).cloned()
     }
 
-    pub fn coords(&self, base: usize) -> Option<((usize, usize), (usize, usize), usize)> {
+    pub fn coords(&self, base: usize) -> Option<TenxCoords> {
         let cell = (base, base + self.version.cell_len());
         let umi = (cell.1, cell.1 + self.version.umi_len());
 
-        Some((cell, umi, umi.1))
+        Some(TenxCoords {
+            cell,
+            umi,
+            consumed: umi.1,
+        })
     }
 
-    pub fn call(
-        &self,
-        seq: &[u8],
-        qual: &[u8],
-        offset: usize,
-    ) -> Option<TenxCellCall> {
-        let (cell, umi, consumed) = self.coords(offset)?;
+    pub fn call(&self, seq: &[u8], qual: &[u8], offset: usize) -> Option<TenxCellCall> {
+        let coords = self.coords(offset)?;
+
+        let cell = coords.cell;
+        let umi = coords.umi;
+        let consumed = coords.consumed;
 
         if seq.len() < umi.1 || qual.len() < umi.1 {
             return None;
@@ -256,7 +242,6 @@ impl CellIdGenerator for TenxWhitelist {
         self.cells.get(allocation_index as usize).cloned()
     }
 
-    
     fn cell_index_for_seq(&self, cell_seq: &[u8]) -> Option<u64> {
         self.exact.get(cell_seq).copied()
     }
@@ -313,16 +298,10 @@ mod tests {
 
     #[test]
     fn tenx_cell_id_is_one_based() {
-        let wl = TenxWhitelist::from_text(
-            TenxVersion::ThreePrimeV3,
-            "AAACCCAAGAAACACT\n",
-        );
+        let wl = TenxWhitelist::from_text(TenxVersion::ThreePrimeV3, "AAACCCAAGAAACACT\n");
 
         assert!(wl.cell_id_to_seq(0).is_none());
 
-        assert_eq!(
-            wl.cell_id_to_seq(1).unwrap(),
-            b"AAACCCAAGAAACACT".to_vec()
-        );
+        assert_eq!(wl.cell_id_to_seq(1).unwrap(), b"AAACCCAAGAAACACT".to_vec());
     }
 }

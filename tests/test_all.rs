@@ -1,9 +1,7 @@
 use pretty_assertions::assert_eq;
 use read_tag_table::ReadTagRecord;
 
-use sc_primer::{
-    BdCellVersion, Grammar, Orientation, PrimerDetector, RhapsodyWhitelist,
-};
+use sc_primer::{BdCellVersion, Grammar, Orientation, PrimerDetector, RhapsodyWhitelist};
 
 struct TestData;
 
@@ -79,6 +77,14 @@ impl TestData {
 
 struct TenxOntMultimerTest;
 
+struct BuiltRead {
+    seq: Vec<u8>,
+    qual: Vec<u8>,
+    cells: Vec<Vec<u8>>,
+    umis: Vec<Vec<u8>>,
+    inserts: Vec<Vec<u8>>,
+}
+
 impl TenxOntMultimerTest {
     fn dna_tag(index: usize, len: usize) -> Vec<u8> {
         let alphabet = b"ACGT";
@@ -113,12 +119,14 @@ impl TenxOntMultimerTest {
 
     fn build_read(
         grammar: &Grammar,
-    ) -> (Vec<u8>, Vec<u8>, Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
-        let mut seq = Vec::new();
-        let mut qual = Vec::new();
-        let mut cells = Vec::new();
-        let mut umis = Vec::new();
-        let mut inserts = Vec::new();
+    ) -> BuiltRead {
+        let mut out = BuiltRead {
+            seq: Vec::new(),
+            qual: Vec::new(),
+            cells: Vec::new(),
+            umis: Vec::new(),
+            inserts: Vec::new(),
+        };
 
         for index in 0..10 {
             let cell = Self::cell(index);
@@ -129,58 +137,67 @@ impl TenxOntMultimerTest {
             let mut primer = grammar.synthesize(&cell, &umi).unwrap();
             primer.extend_from_slice(&insert);
 
-            qual.extend(std::iter::repeat(monomer_quality).take(primer.len()));
-            seq.extend_from_slice(&primer);
+            out.qual.extend(std::iter::repeat_n(monomer_quality, primer.len()));
+            out.seq.extend_from_slice(&primer);
 
-            cells.push(cell);
-            umis.push(umi);
-            inserts.push(insert);
+            out.cells.push(cell);
+            out.umis.push(umi);
+            out.inserts.push(insert);
         }
 
-        (seq, qual, cells, umis, inserts)
+        out
     }
 
     fn run() {
         let grammar = TestData::tenx_3p_v3_no_polyt_grammar("tenx-ont-stress");
         let detector = PrimerDetector::from_grammar(grammar.clone()).unwrap();
-        let (seq, qual, expected_cells, expected_umis, expected_inserts) =
-            Self::build_read(&grammar);
+        let built = Self::build_read(&grammar);
 
-        let matches = detector.detect_all(&seq, &qual).unwrap();
+        let matches = detector.detect_all(&built.seq, &built.qual).unwrap();
 
-        assert_eq!(matches.len(), 10, "expected 10 matches - got {}", matches.len());
+        assert_eq!(matches.len(), 10);
 
-        for index in 0..matches.len() {
-            let primer_match = &matches[index];
-            let cell = primer_match.get_cell(&seq, &qual).unwrap();
-            let umi = primer_match.get_umi(&seq, &qual).unwrap();
-            let insert = primer_match.get_insert(&seq, &qual).unwrap();
+        for (index, primer_match) in matches.iter().enumerate() {
+            let cell = primer_match.get_cell(&built.seq, &built.qual).unwrap();
+            let umi = primer_match.get_umi(&built.seq, &built.qual).unwrap();
+            let insert = primer_match.get_insert(&built.seq, &built.qual).unwrap();
+
             let expected_quality = vec![b'!'.saturating_add(index as u8); cell.seq.len()];
 
-            assert_eq!(primer_match.orientation, Orientation::Forward);
             assert_eq!(
-                cell.seq, expected_cells[index],
-                "{index}: cell seq got {:?} - expected {:?}",
+                primer_match.orientation,
+                Orientation::Forward,
+                "{index}: orientation mismatch"
+            );
+
+            assert_eq!(
+                cell.seq,
+                built.cells[index],
+                "{index}: cell seq got {:?} expected {:?}",
                 std::str::from_utf8(&cell.seq),
-                std::str::from_utf8(&expected_cells[index])
+                std::str::from_utf8(&built.cells[index]),
             );
+
             assert_eq!(
-                umi.seq, expected_umis[index],
-                "{index}: umi seq got {:?} - expected {:?}",
+                umi.seq,
+                built.umis[index],
+                "{index}: umi seq got {:?} expected {:?}",
                 std::str::from_utf8(&umi.seq),
-                std::str::from_utf8(&expected_umis[index])
+                std::str::from_utf8(&built.umis[index]),
             );
+
             assert_eq!(
-                insert.seq, expected_inserts[index],
-                "{index}: insert seq got {:?} - expected {:?}",
+                insert.seq,
+                built.inserts[index],
+                "{index}: insert seq got {:?} expected {:?}",
                 std::str::from_utf8(&insert.seq),
-                std::str::from_utf8(&expected_inserts[index])
+                std::str::from_utf8(&built.inserts[index]),
             );
+
             assert_eq!(
-                cell.qual, expected_quality,
-                "{index}: cell qual got {:?} - expected {:?}",
-                std::str::from_utf8(&cell.qual),
-                std::str::from_utf8(&expected_quality)
+                cell.qual,
+                expected_quality,
+                "{index}: cell qual mismatch"
             );
         }
     }
@@ -268,9 +285,7 @@ fn test_custom_10x_adapter_rejects_too_many_fixed_errors() {
 fn bd_v2_384_index_c1_accepts_one_base_fuzzy_rescue() {
     let wl = RhapsodyWhitelist::builtin(BdCellVersion::V2_384);
 
-    let exact = wl
-        .index_c1(b"CGGAGAGAT")
-        .expect("exact C1 should exist");
+    let exact = wl.index_c1(b"CGGAGAGAT").expect("exact C1 should exist");
 
     let rescued = wl
         .index_c1(b"CGGTGAGAT")
@@ -331,8 +346,7 @@ fn test_bd_v2_384_invalid_cell_is_translated_to_valid_cell() {
     assert_eq!(target_cell, TestData::bd_v2_384_cell(0));
     assert_eq!(hit.bd_cell_id, Some(1));
 
-    let translation = detector
-        .primer_translation();
+    let translation = detector.primer_translation();
 
     assert_eq!(translation.len(), 1);
 }
@@ -420,6 +434,9 @@ fn test_sequence_quality_length_mismatch_is_error() {
 fn test_bd_cell_version_parser() {
     assert_eq!(BdCellVersion::parse("v1").unwrap(), BdCellVersion::V1);
     assert_eq!(BdCellVersion::parse("v2.96").unwrap(), BdCellVersion::V2_96);
-    assert_eq!(BdCellVersion::parse("v2.384").unwrap(), BdCellVersion::V2_384);
+    assert_eq!(
+        BdCellVersion::parse("v2.384").unwrap(),
+        BdCellVersion::V2_384
+    );
     assert!(BdCellVersion::parse("v3").is_err());
 }

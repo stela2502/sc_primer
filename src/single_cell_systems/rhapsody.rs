@@ -2,17 +2,21 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::error::{PrimerError, PrimerResult};
+use crate::single_cell_systems::models::Range;
 use crate::single_cell_systems::traits::CellIdGenerator;
 
-use onehot_dna::{OneHot, OneHotSet};
 use crate::single_cell_systems::whitelists::bd_const_blocks::{
-    BD_V2_384_C1,
-    BD_V2_384_C2,
-    BD_V2_384_C3,
-    BD_V2_96_C1,
-    BD_V2_96_C2,
-    BD_V2_96_C3,
+    BD_V2_384_C1, BD_V2_384_C2, BD_V2_384_C3, BD_V2_96_C1, BD_V2_96_C2, BD_V2_96_C3,
 };
+use onehot_dna::{OneHot, OneHotSet};
+
+pub struct BdCoords {
+    pub c1: Range,
+    pub c2: Range,
+    pub c3: Range,
+    pub umi: Range,
+    pub consumed: usize,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BdCellVersion {
@@ -67,17 +71,17 @@ pub struct RhapsodyWhitelist {
     version: BdCellVersion,
     block_size: u64,
 
-    c1: &'static [ &'static[u8; 9]],
-    c2: &'static [ &'static[u8; 9]],
-    c3: &'static [ &'static[u8; 9]],
+    c1: &'static [&'static [u8; 9]],
+    c2: &'static [&'static [u8; 9]],
+    c3: &'static [&'static [u8; 9]],
 
     c1_exact: HashMap<Vec<u8>, u64>,
     c2_exact: HashMap<Vec<u8>, u64>,
     c3_exact: HashMap<Vec<u8>, u64>,
 
-    c1_fuzzy: OneHotSet::<9>,
-    c2_fuzzy: OneHotSet::<9>,
-    c3_fuzzy: OneHotSet::<9>,
+    c1_fuzzy: OneHotSet<9>,
+    c2_fuzzy: OneHotSet<9>,
+    c3_fuzzy: OneHotSet<9>,
 }
 
 impl BdCellVersion {
@@ -86,7 +90,9 @@ impl BdCellVersion {
             "v1" => Ok(Self::V1),
             "v2.96" => Ok(Self::V2_96),
             "v2.384" => Ok(Self::V2_384),
-            other => Err(PrimerError::rhapsody(format!("unknown BD cell version '{other}'"))),
+            other => Err(PrimerError::rhapsody(format!(
+                "unknown BD cell version '{other}'"
+            ))),
         }
     }
 
@@ -140,28 +146,18 @@ impl RhapsodyCellCall {
 }
 
 impl CellIdGenerator for RhapsodyWhitelist {
-
-    fn cell_seq_for_index(
-        &self,
-        allocation_index: u64,
-    ) -> Option<Vec<u8>> {
+    fn cell_seq_for_index(&self, allocation_index: u64) -> Option<Vec<u8>> {
         let cell_id = allocation_index.checked_add(1)?;
         self.cell_id_to_cassette(cell_id)
     }
 
-
-    fn cell_index_for_seq(
-        &self,
-        seq: &[u8],
-    ) -> Option<u64> {
-
+    fn cell_index_for_seq(&self, seq: &[u8]) -> Option<u64> {
         let qual = vec![b'I'; seq.len()];
 
         let call = self.call(seq, &qual, 0, 0, 0)?.cell_id as u64;
 
-        Some( call - 1)
+        Some(call - 1)
     }
-
 }
 
 impl RhapsodyWhitelist {
@@ -183,9 +179,12 @@ impl RhapsodyWhitelist {
             c2_exact: Self::make_map(c2s),
             c3_exact: Self::make_map(c3s),
 
-            c1_fuzzy: OneHotSet::<9>::from_sequences(c1s).expect("builtin C1 whitelist must encode"),
-            c2_fuzzy: OneHotSet::<9>::from_sequences(c2s).expect("builtin C2 whitelist must encode"),
-            c3_fuzzy: OneHotSet::<9>::from_sequences(c3s).expect("builtin C3 whitelist must encode"),
+            c1_fuzzy: OneHotSet::<9>::from_sequences(c1s)
+                .expect("builtin C1 whitelist must encode"),
+            c2_fuzzy: OneHotSet::<9>::from_sequences(c2s)
+                .expect("builtin C2 whitelist must encode"),
+            c3_fuzzy: OneHotSet::<9>::from_sequences(c3s)
+                .expect("builtin C3 whitelist must encode"),
         }
     }
 
@@ -193,9 +192,9 @@ impl RhapsodyWhitelist {
         self.version.cell_len()
     }
 
-    fn make_map(entries: &[&[u8; 9]] ) -> HashMap<Vec<u8>, u64> {
+    fn make_map(entries: &[&[u8; 9]]) -> HashMap<Vec<u8>, u64> {
         entries
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(idx, seq)| (seq.to_vec(), idx as u64))
             .collect()
@@ -210,21 +209,11 @@ impl RhapsodyWhitelist {
     }
 
     pub fn bd_v1() -> Self {
-        Self::new(
-            BdCellVersion::V1,
-            BD_V2_96_C1,
-            BD_V2_96_C2,
-            BD_V2_96_C3,
-        )
+        Self::new(BdCellVersion::V1, BD_V2_96_C1, BD_V2_96_C2, BD_V2_96_C3)
     }
 
     pub fn bd_v2_96() -> Self {
-        Self::new(
-            BdCellVersion::V2_96,
-            BD_V2_96_C1,
-            BD_V2_96_C2,
-            BD_V2_96_C3,
-        )
+        Self::new(BdCellVersion::V2_96, BD_V2_96_C1, BD_V2_96_C2, BD_V2_96_C3)
     }
 
     pub fn bd_v2_384() -> Self {
@@ -256,13 +245,13 @@ impl RhapsodyWhitelist {
         None
     }
 
-    pub fn cell_id_to_parts_ids(&self, cell_id:u64 ) -> Option<( usize, usize, usize)>{
+    pub fn cell_id_to_parts_ids(&self, cell_id: u64) -> Option<(usize, usize, usize)> {
         if cell_id == 0 {
             return None;
         }
 
         let id = cell_id - 1;
-        let bs = self.block_size as u64;
+        let bs = self.block_size;
 
         let c1_idx = (id / (bs * bs)) as usize;
 
@@ -271,12 +260,11 @@ impl RhapsodyWhitelist {
         let c2_idx = (rem / bs) as usize;
         let c3_idx = (rem % bs) as usize;
 
-        Some( (c1_idx, c2_idx, c3_idx) )
+        Some((c1_idx, c2_idx, c3_idx))
     }
 
-    pub fn cell_id_to_seq(&self, cell_id:u64 ) -> Option<Vec<u8>> {
-        
-        let (c1_idx, c2_idx, c3_idx) = self.cell_id_to_parts_ids( cell_id )?;
+    pub fn cell_id_to_seq(&self, cell_id: u64) -> Option<Vec<u8>> {
+        let (c1_idx, c2_idx, c3_idx) = self.cell_id_to_parts_ids(cell_id)?;
 
         let c1 = self.c1.get(c1_idx)?;
         let c2 = self.c2.get(c2_idx)?;
@@ -308,40 +296,29 @@ impl RhapsodyWhitelist {
         shift: usize,
     ) -> Option<RhapsodyCellCall> {
         let base = offset.checked_add(shift)?;
-        let (c1, c2, c3, umi, consumed) = self.coords(base)?;
+        let coords = self.coords(base)?;
+
+        let c1 = coords.c1;
+        let c2 = coords.c2;
+        let c3 = coords.c3;
+        let umi = coords.umi;
+        let consumed = coords.consumed;
 
         if seq.len() < umi.1 || qual.len() < umi.1 {
             return None;
         }
 
-        let c1_exact = Self::index_block_fast(
-            &seq[c1.0..c1.1],
-            &self.c1_exact,
-        );
+        let c1_exact = Self::index_block_fast(&seq[c1.0..c1.1], &self.c1_exact);
 
-        let c2_exact = Self::index_block_fast(
-            &seq[c2.0..c2.1],
-            &self.c2_exact,
-        );
+        let c2_exact = Self::index_block_fast(&seq[c2.0..c2.1], &self.c2_exact);
 
-        let c3_exact = Self::index_block_fast(
-            &seq[c3.0..c3.1],
-            &self.c3_exact,
-        );
-
+        let c3_exact = Self::index_block_fast(&seq[c3.0..c3.1], &self.c3_exact);
 
         let missing =
-            c1_exact.is_none() as u8 +
-            c2_exact.is_none() as u8 +
-            c3_exact.is_none() as u8;
-
+            c1_exact.is_none() as u8 + c2_exact.is_none() as u8 + c3_exact.is_none() as u8;
 
         let (c1_idx, c2_idx, c3_idx) = match missing {
-            0 => (
-                c1_exact.unwrap(),
-                c2_exact.unwrap(),
-                c3_exact.unwrap(),
-            ),
+            0 => (c1_exact.unwrap(), c2_exact.unwrap(), c3_exact.unwrap()),
 
             1 => (
                 match c1_exact {
@@ -361,19 +338,36 @@ impl RhapsodyWhitelist {
             _ => return None,
         };
 
-
         let cell_id =
-            c1_idx * self.block_size * self.block_size +
-            c2_idx * self.block_size +
-            c3_idx +
-            1;
+            c1_idx * self.block_size * self.block_size + c2_idx * self.block_size + c3_idx + 1;
 
         let mut cell_seq = Vec::with_capacity(27);
         let mut cell_qual = Vec::with_capacity(27);
 
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c1, Some(&self.c1[c1_idx as usize]) );
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c2, Some(&self.c2[c2_idx as usize]) );
-        self.extend_part(&mut cell_seq, &mut cell_qual, seq, qual, c3, Some(&self.c3[c3_idx as usize]) );
+        self.extend_part(
+            &mut cell_seq,
+            &mut cell_qual,
+            seq,
+            qual,
+            c1,
+            Some(self.c1[c1_idx as usize]),
+        );
+        self.extend_part(
+            &mut cell_seq,
+            &mut cell_qual,
+            seq,
+            qual,
+            c2,
+            Some(self.c2[c2_idx as usize]),
+        );
+        self.extend_part(
+            &mut cell_seq,
+            &mut cell_qual,
+            seq,
+            qual,
+            c3,
+            Some(self.c3[c3_idx as usize]),
+        );
 
         Some(RhapsodyCellCall {
             version: self.version,
@@ -395,12 +389,8 @@ impl RhapsodyWhitelist {
         c1 * self.block_size * self.block_size + c2 * self.block_size + c3 + 1
     }
 
-
     #[inline]
-    fn index_block_fast(
-        seq: &[u8],
-        exact: &HashMap<Vec<u8>, u64>,
-    ) -> Option<u64> {
+    fn index_block_fast(seq: &[u8], exact: &HashMap<Vec<u8>, u64>) -> Option<u64> {
         if let Some(idx) = exact.get(seq) {
             return Some(*idx);
         }
@@ -408,12 +398,7 @@ impl RhapsodyWhitelist {
     }
 
     #[inline]
-    fn index_block_slow(
-        seq: &[u8],
-        fuzzy: &OneHotSet<9>,
-        max_mismatches: u32,
-    ) -> Option<u64> {
-
+    fn index_block_slow(seq: &[u8], fuzzy: &OneHotSet<9>, max_mismatches: u32) -> Option<u64> {
         let obs = OneHot::<9>::from_bytes(seq).ok()?;
         let (idx, _dist) = fuzzy.best_match(&obs, max_mismatches)?;
 
@@ -429,31 +414,14 @@ impl RhapsodyWhitelist {
     }
 
     pub fn index_c3(&self, seq: &[u8]) -> Option<u64> {
-        Self::index_block_slow(seq,  &self.c3_fuzzy, 1)
+        Self::index_block_slow(seq, &self.c3_fuzzy, 1)
     }
 
-    pub fn create_cell_cassette(
-        &self,
-        c1_idx: usize,
-        c2_idx: usize,
-        c3_idx: usize,
-    ) -> Vec<u8> {
+    pub fn create_cell_cassette(&self, c1_idx: usize, c2_idx: usize, c3_idx: usize) -> Vec<u8> {
         let (c1s, c2s, c3s) = match self.version {
-            BdCellVersion::V1 => (
-                BD_V2_96_C1,
-                BD_V2_96_C2,
-                BD_V2_96_C3,
-            ),
-            BdCellVersion::V2_96 => (
-                BD_V2_96_C1,
-                BD_V2_96_C2,
-                BD_V2_96_C3,
-            ),
-            BdCellVersion::V2_384 => (
-                BD_V2_384_C1,
-                BD_V2_384_C2,
-                BD_V2_384_C3,
-            ),
+            BdCellVersion::V1 => (BD_V2_96_C1, BD_V2_96_C2, BD_V2_96_C3),
+            BdCellVersion::V2_96 => (BD_V2_96_C1, BD_V2_96_C2, BD_V2_96_C3),
+            BdCellVersion::V2_384 => (BD_V2_384_C1, BD_V2_384_C2, BD_V2_384_C3),
         };
 
         let mut seq = Vec::new();
@@ -481,31 +449,22 @@ impl RhapsodyWhitelist {
         seq
     }
 
-    pub fn coords(
-        &self,
-        base: usize,
-    ) -> Option<(
-        (usize, usize),
-        (usize, usize),
-        (usize, usize),
-        (usize, usize),
-        usize,
-    )> {
+    pub fn coords(&self, base: usize) -> Option<BdCoords> {
         match self.version {
-            BdCellVersion::V1 => Some((
-                (base, base + 9),
-                (base + 21, base + 30),
-                (base + 43, base + 52),
-                (base + 52, base + 60),
-                base + 60,
-            )),
-            BdCellVersion::V2_96 | BdCellVersion::V2_384 => Some((
-                (base, base + 9),
-                (base + 13, base + 22),
-                (base + 26, base + 35),
-                (base + 36, base + 42),
-                base + 42,
-            )),
+            BdCellVersion::V1 => Some(BdCoords {
+                c1: (base, base + 9),
+                c2: (base + 21, base + 30),
+                c3: (base + 43, base + 52),
+                umi: (base + 52, base + 60),
+                consumed: base + 60,
+            }),
+            BdCellVersion::V2_96 | BdCellVersion::V2_384 => Some(BdCoords {
+                c1: (base, base + 9),
+                c2: (base + 13, base + 22),
+                c3: (base + 26, base + 35),
+                umi: (base + 36, base + 42),
+                consumed: base + 42,
+            }),
         }
     }
 
@@ -532,7 +491,6 @@ mod tests {
     use super::*;
     use crate::{Chemistry, PrimerDetector};
 
-
     fn qual(len: usize) -> Vec<u8> {
         vec![40; len]
     }
@@ -550,20 +508,31 @@ mod tests {
 
         assert_eq!(call.version, BdCellVersion::V2_384);
         assert_eq!(call.shift, 3);
-        assert_eq!(&seq[call.c1.0..call.c1.1], b"CGGAGAGAT","expected CGGAGAGAT from {} to {}", call.c1.0, call.c1.1);
-        assert_eq!(&seq[call.c2.0..call.c2.1], b"GCGCCATAT","expected GCGCCATAT from {} to {}", call.c2.0, call.c2.1);
-        assert_eq!(&seq[call.c3.0..call.c3.1], b"GCGGAGCAT","expected GCGGAGCAT from {} to {}", call.c3.0, call.c3.1);
-
-
         assert_eq!(
-            call.cell_id,
-            45928512,
+            &seq[call.c1.0..call.c1.1],
+            b"CGGAGAGAT",
+            "expected CGGAGAGAT from {} to {}",
+            call.c1.0,
+            call.c1.1
+        );
+        assert_eq!(
+            &seq[call.c2.0..call.c2.1],
+            b"GCGCCATAT",
+            "expected GCGCCATAT from {} to {}",
+            call.c2.0,
+            call.c2.1
+        );
+        assert_eq!(
+            &seq[call.c3.0..call.c3.1],
+            b"GCGGAGCAT",
+            "expected GCGGAGCAT from {} to {}",
+            call.c3.0,
+            call.c3.1
         );
 
-        assert_eq!(
-            call.cell_seq,
-            b"CGGAGAGATGCGCCATATGCGGAGCAT".to_vec(),
-        );
+        assert_eq!(call.cell_id, 45928512,);
+
+        assert_eq!(call.cell_seq, b"CGGAGAGATGCGCCATATGCGGAGCAT".to_vec(),);
     }
 
     #[test]
@@ -599,7 +568,6 @@ mod tests {
         assert_eq!(call.umi_seq.len(), 6);
         assert_eq!(call.cell_seq.len(), 27);
     }
-
 
     #[test]
     fn bd_v2_384_false_positive_stress_test_detect_all() {
@@ -657,14 +625,13 @@ mod tests {
         let mut expected_ids = Vec::new();
 
         for i in 0..100 {
-            let cell_id = (i+1) as u64;
+            let cell_id = (i + 1) as u64;
             let umi = format!("{:06}", i)
                 .replace('0', "A")
                 .replace('1', "C")
                 .replace('2', "G")
                 .replace('3', "T")
                 .into_bytes();
-
 
             let wl = RhapsodyWhitelist::bd_v2_384();
 
@@ -682,11 +649,10 @@ mod tests {
             // Add some insert sequence.
             primer.extend_from_slice(b"GATCGATCGATCGATCGATCGATCGATCG");
 
-            
             seq.extend_from_slice(&primer);
-            qual.extend(std::iter::repeat(b'I').take(primer.len()));
+            qual.extend(std::iter::repeat_n(b'I', primer.len()));
 
-            expected_ids.push( cell_id);
+            expected_ids.push(cell_id);
         }
 
         let hits = detector.detect_all(&seq, &qual).unwrap();
@@ -707,5 +673,4 @@ mod tests {
             );
         }
     }
-
 }

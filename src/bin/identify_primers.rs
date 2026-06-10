@@ -2,7 +2,11 @@ use clap::Parser;
 use sc_primer::PrimerCli;
 
 #[derive(Debug, Parser)]
-#[command(author, version, about = "Identify primer/barcode/UMI structure in one DNA sequence")]
+#[command(
+    author,
+    version,
+    about = "Identify primer/barcode/UMI structure in one DNA sequence"
+)]
 struct Cli {
     #[command(flatten)]
     primer: PrimerCli,
@@ -45,27 +49,22 @@ fn main() -> Result<(), String> {
     let mut matched = 0usize;
 
     for attempt in &attempts {
-
         if attempt.ok {
-            let prefix = std::str::from_utf8(&seq[..attempt.offset])
-                .unwrap_or("<non-utf8>");
-            let cell_seq = match &attempt.cell_seq{
+            let prefix = std::str::from_utf8(&seq[..attempt.offset]).unwrap_or("<non-utf8>");
+            let cell_seq = match &attempt.cell_seq {
                 Some(seq) => seq,
                 None => &String::new(),
             };
             println!(
-                "  prefix: {}bp [0..{}] {}\n  cell_seq: {}", 
-                prefix,
-                attempt.offset,
-                attempt.offset,
-                cell_seq,
+                "  prefix: {}bp [0..{}] {}\n  cell_seq: {}",
+                prefix, attempt.offset, attempt.offset, cell_seq,
             );
         }
 
-        if ! attempt.ok {
-            continue
-        }else {
-             matched += 1;
+        if !attempt.ok {
+            continue;
+        } else {
+            matched += 1;
         }
         println!(
             "offset: {} orientation: {:?} status: {} reason: {}",

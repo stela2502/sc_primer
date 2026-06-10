@@ -47,24 +47,13 @@ pub enum Chemistry {
 }
 
 impl Chemistry {
-
     pub fn parse(raw: &str) -> PrimerResult<Self> {
         match raw {
-            "tenx-3p-v1" | "10x-3p-v1" | "chromium-single-cell-3-v1" => {
-                Ok(Self::TenxThreePrimeV1)
-            }
-            "tenx-3p-v2" | "10x-3p-v2" | "tenx-v2" => {
-                Ok(Self::TenxThreePrimeV2)
-            }
-            "tenx-3p-v3" | "10x-3p-v3" | "tenx-v3" => {
-                Ok(Self::TenxThreePrimeV3)
-            }
-            "tenx-3p-v4" | "10x-3p-v4" | "tenx-v4" => {
-                Ok(Self::TenxThreePrimeV4)
-            }
-            "tenx-5p" | "10x-5p" | "tenx-five-prime" => {
-                Ok(Self::TenxFivePrime)
-            }
+            "tenx-3p-v1" | "10x-3p-v1" | "chromium-single-cell-3-v1" => Ok(Self::TenxThreePrimeV1),
+            "tenx-3p-v2" | "10x-3p-v2" | "tenx-v2" => Ok(Self::TenxThreePrimeV2),
+            "tenx-3p-v3" | "10x-3p-v3" | "tenx-v3" => Ok(Self::TenxThreePrimeV3),
+            "tenx-3p-v4" | "10x-3p-v4" | "tenx-v4" => Ok(Self::TenxThreePrimeV4),
+            "tenx-5p" | "10x-5p" | "tenx-five-prime" => Ok(Self::TenxFivePrime),
             "tenx-multiome-arc-v1" | "10x-multiome-arc-v1" | "tenx-arc-v1" => {
                 Ok(Self::TenxMultiomeArcV1)
             }
@@ -124,17 +113,17 @@ impl Chemistry {
                 "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+TENX_CELL:arc-v1+UMI:12+INSERT",
             ),
 
-            Self::BdV1 => {
-                Grammar::parse(self.name(), "BD_CELL:v1+POLYT:min=0+INSERT")
-            }
+            Self::BdV1 => Grammar::parse(self.name(), "BD_CELL:v1+POLYT:min=0+INSERT"),
 
-            Self::BdV2_96 => {
-                Grammar::parse(self.name(), "FIXED:ATAGGAAACTCATGGT:mm=2+BD_CELL:v2.96+POLYT:min=0+INSERT")
-            }
+            Self::BdV2_96 => Grammar::parse(
+                self.name(),
+                "FIXED:ATAGGAAACTCATGGT:mm=2+BD_CELL:v2.96+POLYT:min=0+INSERT",
+            ),
 
-            Self::BdV2_384 => {
-                Grammar::parse(self.name(), "FIXED:ATAGGAAACTCATGGT:mm=2+BD_CELL:v2.384+POLYT:min=0+INSERT")
-            }
+            Self::BdV2_384 => Grammar::parse(
+                self.name(),
+                "FIXED:ATAGGAAACTCATGGT:mm=2+BD_CELL:v2.384+POLYT:min=0+INSERT",
+            ),
         }
     }
 }

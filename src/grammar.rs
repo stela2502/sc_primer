@@ -1,7 +1,6 @@
+use crate::anchor::AnchorSearch;
 use crate::error::{PrimerError, PrimerResult};
 use crate::single_cell_systems::*;
-use crate::anchor::AnchorSearch;
-
 
 use int_to_str::IntToStr;
 
@@ -63,15 +62,11 @@ impl Grammar {
                 GrammarOp::TenxCell { version } => {
                     cell_len += version.cell_len();
 
-                    system = Some(SingleCellSystem::Tenx(
-                        TenxWhitelist::builtin(*version)?,
-                    ));
+                    system = Some(SingleCellSystem::Tenx(TenxWhitelist::builtin(*version)?));
                 }
 
-                GrammarOp::Fixed { seq, mismatches } => {
-                    if anchor_search.is_none() {
-                        anchor_search = AnchorSearch::new(seq, *mismatches);
-                    }
+                GrammarOp::Fixed { seq, mismatches } if anchor_search.is_none() => {
+                    anchor_search = AnchorSearch::new(seq, *mismatches);
                 }
 
                 _ => {}
@@ -97,9 +92,7 @@ impl Grammar {
     }
 
     pub fn umi_from_u64(&self, id: u64) -> Vec<u8> {
-        IntToStr::from_u64(id)
-            .to_string(self.umi_len)
-            .into_bytes()
+        IntToStr::from_u64(id).to_string(self.umi_len).into_bytes()
     }
 
     pub fn anchor_search(&self) -> Option<&AnchorSearch> {
@@ -130,11 +123,7 @@ impl Grammar {
 
     /// Create a full primer prefix from the grammar using an externally supplied
     /// cell sequence/cassette and UMI sequence.
-    pub fn synthesize(
-        &self,
-        cell_seq: &[u8],
-        umi_seq: &[u8],
-    ) -> PrimerResult<Vec<u8>> {
+    pub fn synthesize(&self, cell_seq: &[u8], umi_seq: &[u8]) -> PrimerResult<Vec<u8>> {
         let mut seq = Vec::new();
 
         for op in &self.ops {
@@ -176,7 +165,6 @@ impl Grammar {
                     seq.extend_from_slice(cell_seq);
                     seq.extend_from_slice(umi_seq);
                 }
-
 
                 GrammarOp::Umi { len } => {
                     if umi_seq.len() != *len {
@@ -250,7 +238,9 @@ impl GrammarOp {
             return Self::parse_len(rest).map(|len| Self::Feature { len });
         }
 
-        Err(PrimerError::invalid_grammar(format!("unknown token '{token}'")))
+        Err(PrimerError::invalid_grammar(format!(
+            "unknown token '{token}'"
+        )))
     }
 
     pub fn parse_fixed(rest: &str) -> PrimerResult<Self> {
