@@ -267,7 +267,7 @@ pub enum Chemistry {
     ///
     /// Uses three 9 bp barcode blocks, BD whitelist lookup, shifts 0..4,
     /// and the 384-block barcode ID formula.
-    BdV2_384,
+    BdV2_386,
 }
 ```
 

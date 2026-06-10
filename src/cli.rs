@@ -1,6 +1,6 @@
 use clap::Args;
 
-use crate::{Chemistry, PrimerDetector, RhapsodyWhitelist, Grammar};
+use crate::{Chemistry, PrimerDetector, Grammar};
 
 #[derive(Debug, Clone, Args)]
 pub struct PrimerCli {
@@ -23,14 +23,13 @@ pub struct PrimerCli {
 
 impl PrimerCli {
     pub fn detector(&self) -> Result<PrimerDetector, String> {
-        let detector = if let Some(structure) = self.primer_structure.as_deref() {
-
-            PrimerDetector::from_grammar_with_rhapsody( Grammar::parse( "custom", structure)?, RhapsodyWhitelist::bd_v2_384())
+        let grammar = if let Some(structure) = self.primer_structure.as_deref() {
+            Grammar::parse("custom", structure)?
         } else {
-            PrimerDetector::from_chemistry(self.chemistry)?
+            self.chemistry.grammar()?
         };
 
-        //detector.set_detect_reverse_complement(self.detect_reverse_complement);
+        let detector = PrimerDetector::from_grammar(grammar)?;
 
         Ok(detector)
     }
