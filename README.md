@@ -1,7 +1,5 @@
 # sc_primer
 
-[![Crates.io](https://img.shields.io/crates/v/sc_primer.svg)](https://crates.io/crates/sc_primer)
-[![Docs.rs](https://docs.rs/sc_primer/badge.svg)](https://docs.rs/sc_primer)
 
 A high-performance Rust library for detecting and extracting single-cell sequencing structures from FASTQ reads.
 
@@ -14,6 +12,10 @@ A high-performance Rust library for detecting and extracting single-cell sequenc
 * ONT-based workflows
 
 The crate is designed as a reusable building block for downstream tools such as normalizers, demultiplexers, quantifiers, and single-cell preprocessing pipelines.
+
+
+This crate intentionally bundles 10x and BD whitelist resources.
+Because the 10x 3M whitelist exceeds crates.io package limits, the full batteries-included crate is currently distributed via Git.
 
 ---
 
