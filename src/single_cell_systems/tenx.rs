@@ -9,13 +9,17 @@ use crate::single_cell_systems::models::Range;
 use crate::single_cell_systems::CellIdGenerator;
 use onehot_dna::{OneHot, OneHotSet};
 
-static TENX_3M_FEBRUARY_2018: &[u8] = include_bytes!("whitelists/3M-february-2018.txt.gz");
+static TENX_3M_FEBRUARY_2018: &[u8] =
+    include_bytes!("whitelists/3M-february-2018.txt.gz");
 
-static TENX_737K_APRIL_2014_RC: &[u8] = include_bytes!("whitelists/737k-april-2014_rc.txt.gz");
+static TENX_3M_FEBRUARY_2018_TRU: &[u8] =
+    include_bytes!("whitelists/3M-february-2018_TRU.txt.gz");
 
-static TENX_737K_AUGUST_2016: &[u8] = include_bytes!("whitelists/737k-august-2016.txt.gz");
+static TENX_3M_3PGEX_MAY_2023_TRU: &[u8] =
+    include_bytes!("whitelists/3M-3pgex-may-2023_TRU.txt.gz");
 
-static TENX_737K_ARC_V1: &[u8] = include_bytes!("whitelists/737K-arc-v1.txt.gz");
+static TENX_3M_5PGEX_JAN_2023: &[u8] =
+    include_bytes!("whitelists/3M-5pgex-jan-2023.txt.gz");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TenxVersion {
@@ -104,11 +108,9 @@ impl TenxVersion {
             Self::ThreePrimeV2 => TENX_737K_APRIL_2014_RC,
 
             Self::ThreePrimeV3 => TENX_3M_FEBRUARY_2018,
+            Self::ThreePrimeV4 => TENX_3M_3PGEX_MAY_2023_TRU,
 
-            // replace later if you add the May-2023 whitelist
-            Self::ThreePrimeV4 => TENX_3M_FEBRUARY_2018,
-
-            Self::FivePrime => TENX_737K_AUGUST_2016,
+            Self::FivePrime => TENX_3M_5PGEX_JAN_2023,
 
             Self::MultiomeArcV1 => TENX_737K_ARC_V1,
         }
