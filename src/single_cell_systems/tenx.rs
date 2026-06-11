@@ -7,6 +7,7 @@ use flate2::read::GzDecoder;
 use crate::error::{PrimerError, PrimerResult};
 use crate::single_cell_systems::models::Range;
 use crate::single_cell_systems::CellIdGenerator;
+use onehot_dna::{OneHot, OneHotSet};
 
 static TENX_3M_FEBRUARY_2018: &[u8] = include_bytes!("whitelists/3M-february-2018.txt.gz");
 
@@ -50,20 +51,21 @@ pub struct TenxWhitelist {
     version: TenxVersion,
     cells: Vec<Vec<u8>>,
     exact: HashMap<Vec<u8>, u64>,
+    fuzzy: OneHotSet<16>,
 }
 
 impl TenxVersion {
     pub fn parse(raw: &str) -> PrimerResult<Self> {
         match raw.to_ascii_lowercase().as_str() {
-            "3pv1" | "3-prime-v1" | "chromium-single-cell-3-prime-v1" => Ok(Self::ThreePrimeV1),
+            "3pv1" | "3p-v1" | "chromium-single-cell-3-prime-v1" => Ok(Self::ThreePrimeV1),
 
-            "3pv2" | "3-prime-v2" | "chromium-single-cell-3-prime-v2" => Ok(Self::ThreePrimeV2),
+            "3pv2" | "3p-v2" | "chromium-single-cell-3-prime-v2" => Ok(Self::ThreePrimeV2),
 
-            "3pv3" | "3-prime-v3" | "chromium-single-cell-3-prime-v3" => Ok(Self::ThreePrimeV3),
+            "3pv3" | "3p-v3" | "chromium-single-cell-3-prime-v3" => Ok(Self::ThreePrimeV3),
 
-            "3pv4" | "3-prime-v4" | "chromium-single-cell-3-prime-v4" => Ok(Self::ThreePrimeV4),
+            "3pv4" | "3p-v4" | "chromium-single-cell-3-prime-v4" => Ok(Self::ThreePrimeV4),
 
-            "5p" | "5-prime" | "chromium-single-cell-5-prime" => Ok(Self::FivePrime),
+            "5p" |  "chromium-single-cell-5-prime" => Ok(Self::FivePrime),
 
             "arc" | "arc-v1" | "chromium-single-cell-multiome-atac-gene-expression" => {
                 Ok(Self::MultiomeArcV1)
@@ -165,10 +167,23 @@ impl TenxWhitelist {
             .map(|(idx, seq)| (seq.clone(), idx as u64))
             .collect();
 
+        let refs = cells
+            .iter()
+            .map(|v| {
+                <&[u8; 16]>::try_from(v.as_slice())
+                    .expect("10x whitelist cell must be 16 bp")
+            })
+            .collect::<Vec<_>>();
+
+        let fuzzy =
+            OneHotSet::<16>::from_sequences(&refs)
+                .expect("10x whitelist must encode");
+
         Self {
             version,
             cells,
             exact,
+            fuzzy,
         }
     }
 
@@ -185,7 +200,14 @@ impl TenxWhitelist {
     }
 
     pub fn index_cell(&self, seq: &[u8]) -> Option<u64> {
-        self.exact.get(seq).copied()
+        if let Some(idx) = self.exact.get(seq) {
+            return Some(*idx);
+        }
+
+        let obs = OneHot::<16>::from_bytes(seq).ok()?;
+        let (idx, _dist) = self.fuzzy.best_match(&obs, 1)?;
+
+        Some(idx as u64)
     }
 
     pub fn cell_id_to_seq(&self, cell_id: u64) -> Option<Vec<u8>> {

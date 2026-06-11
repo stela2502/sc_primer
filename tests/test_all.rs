@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 use read_tag_table::ReadTagRecord;
 
-use sc_primer::{BdCellVersion, Grammar, Orientation, PrimerDetector, RhapsodyWhitelist};
+use sc_primer::{BdCellVersion, Grammar, Orientation, Chemistry, PrimerDetector, RhapsodyWhitelist, single_cell_systems::CellIdGenerator};
 
 struct TestData;
 
@@ -201,6 +201,36 @@ impl TenxOntMultimerTest {
             );
         }
     }
+}
+
+pub fn bench<F: FnMut()>(
+    name: &str,
+    iterations: usize,
+    hits_per_op: usize,
+    mut f: F,
+) {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    for _ in 0..iterations {
+        std::hint::black_box(f());
+    }
+
+    let elapsed = start.elapsed();
+
+    let us_per_op =
+        elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64;
+
+    let us_per_hit =
+        us_per_op / hits_per_op as f64;
+
+    eprintln!(
+        "{:<40} {:>10.3} µs/op {:>10.3} µs/hit",
+        name,
+        us_per_op,
+        us_per_hit,
+    );
 }
 
 #[test]
@@ -439,4 +469,261 @@ fn test_bd_cell_version_parser() {
         BdCellVersion::V2_384
     );
     assert!(BdCellVersion::parse("v3").is_err());
+}
+
+/*
+#[test]
+//#[ignore = "timing/stress test; run manually"]
+fn stress_detect_all_tenx_v3_1000x() {
+    use std::time::Instant;
+
+    let detector = PrimerDetector::from_chemistry(Chemistry::TenxThreePrimeV3).unwrap();
+
+    let mut seq = Vec::new();
+    let mut qual = Vec::new();
+
+    for i in 0..10 {
+        let cell = detector
+            .single_cell_system
+            .as_ref()
+            .unwrap()
+            .cell_seq_for_index(i)
+            .unwrap();
+
+        let umi = detector.grammar().umi_from_u64(i as u64);
+
+        let mut primer = detector
+            .grammar()
+            .synthesize(&cell, &umi)
+            .unwrap();
+
+        primer.extend_from_slice(b"GATCGATCGATCGATCGATCGATCGATCG");
+
+        qual.extend(std::iter::repeat_n(b'I', primer.len()));
+        seq.extend_from_slice(&primer);
+    }
+
+    let first = detector.detect_all(&seq, &qual).unwrap();
+    assert_eq!(first.len(), 10);
+
+    let start = Instant::now();
+
+    for _ in 0..1000 {
+        let hits = detector.detect_all(&seq, &qual).unwrap();
+        assert_eq!(hits.len(), 10);
+        std::hint::black_box(hits);
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!(
+        "detect_all 10x-v3 stress: 1000 reads / 10000 primer matches in {:?}; {:.3} µs/read; {:.3} µs/match",
+        elapsed,
+        elapsed.as_secs_f64() * 1_000_000.0 / 1000.0,
+        elapsed.as_secs_f64() * 1_000_000.0 / 10_000.0,
+    );
+}
+
+#[test]
+//#[ignore = "timing/stress test; run manually"]
+fn stress_detect_all_bd_v2_384_1000x() {
+    use std::time::Instant;
+
+    let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
+
+    let mut seq = Vec::new();
+    let mut qual = Vec::new();
+
+    let wl = RhapsodyWhitelist::bd_v2_384();
+
+    for i in 0..10 {
+        let cell_id = (i + 1) as u64;
+
+        let (c1, c2, c3) = wl
+            .cell_id_to_parts_ids(cell_id)
+            .expect("invalid BD cell id");
+
+        let cell = wl.create_cell_cassette(c1, c2, c3);
+        let umi = detector.grammar().umi_from_u64(i as u64);
+
+        let mut primer = detector
+            .grammar()
+            .synthesize(&cell, &umi)
+            .unwrap();
+
+        primer.extend_from_slice(b"GATCGATCGATCGATCGATCGATCGATCG");
+
+        qual.extend(std::iter::repeat_n(b'I', primer.len()));
+        seq.extend_from_slice(&primer);
+    }
+
+    let first = detector.detect_all(&seq, &qual).unwrap();
+    assert_eq!(first.len(), 10);
+
+    let start = Instant::now();
+
+    for _ in 0..1000 {
+        let hits = detector.detect_all(&seq, &qual).unwrap();
+        assert_eq!(hits.len(), 10);
+        std::hint::black_box(hits);
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!(
+        "detect_all bd-v2-384 stress: 1000 reads / 10000 primer matches in {:?}; {:.3} µs/read; {:.3} µs/match",
+        elapsed,
+        elapsed.as_secs_f64() * 1_000_000.0 / 1000.0,
+        elapsed.as_secs_f64() * 1_000_000.0 / 10_000.0,
+    );
+}*/
+
+#[test]
+#[ignore = "benchmark"]
+fn benchmark_detect_all_tenx_multimer() {
+    let detector = PrimerDetector::from_chemistry(
+        Chemistry::TenxThreePrimeV3,
+    )
+    .unwrap();
+
+    let grammar = detector.grammar().clone();
+
+    let built = TenxOntMultimerTest::build_read(&grammar);
+
+    let hits = detector.detect_all(&built.seq, &built.qual).unwrap();
+    assert_eq!(hits.len(), 10);
+
+    bench("10x detect_all multimer", 100_000, 10, || {
+        std::hint::black_box(
+            detector.detect_all(&built.seq, &built.qual).unwrap()
+        );
+    });
+}
+
+#[test]
+#[ignore = "benchmark"]
+fn benchmark_detect_all_bd_v2_384_multimer() {
+    let detector =
+        PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
+
+    let mut seq = Vec::new();
+    let mut qual = Vec::new();
+
+    let wl = RhapsodyWhitelist::bd_v2_384();
+
+    for i in 0..100 {
+        let cell_id = (i + 1) as u64;
+
+        let (c1, c2, c3) = wl
+            .cell_id_to_parts_ids(cell_id)
+            .expect("invalid cell id");
+
+        let cell = wl.create_cell_cassette(c1, c2, c3);
+
+        let umi = detector.grammar().umi_from_u64(i as u64);
+
+        let mut primer = detector
+            .grammar()
+            .synthesize(&cell, &umi)
+            .unwrap();
+
+        primer.extend_from_slice(
+            b"GATCGATCGATCGATCGATCGATCGATCG",
+        );
+
+        seq.extend_from_slice(&primer);
+        qual.extend(std::iter::repeat_n(b'I', primer.len()));
+    };
+
+    let hits = detector.detect_all(&seq, &qual).unwrap();
+    assert_eq!(hits.len(), 100);
+
+    bench("BD detect_all multimer", 100_000, 100, || {
+        std::hint::black_box(
+            detector.detect_all(&seq, &qual).unwrap()
+        );
+    });
+}
+
+#[test]
+#[ignore = "benchmark"]
+fn benchmark_detect_all_tenx_multimer_fuzzy() {
+    let detector = PrimerDetector::from_chemistry(Chemistry::TenxThreePrimeV3).unwrap();
+    let grammar = detector.grammar().clone();
+
+    let mut built = TenxOntMultimerTest::build_read(&grammar);
+
+    let hits_per_read = 10;
+    let monomer_len = built.seq.len() / hits_per_read;
+    let fixed_len = b"CTACACGACGCTCTTCCGATCT".len();
+
+    for i in 0..hits_per_read {
+        let cell_start = i * monomer_len + fixed_len;
+        built.seq[cell_start] = b'N';
+    }
+
+    let hits = detector.detect_all(&built.seq, &built.qual).unwrap();
+    assert_eq!(hits.len(), hits_per_read);
+
+    bench(
+        "10x fuzzy detect_all multimer",
+        100_000,
+        hits_per_read,
+        || {
+            std::hint::black_box(
+                detector.detect_all(&built.seq, &built.qual).unwrap()
+            );
+        },
+    );
+}
+
+#[test]
+#[ignore = "benchmark"]
+fn benchmark_detect_all_bd_v2_384_multimer_fuzzy() {
+    let detector = PrimerDetector::from_chemistry(Chemistry::BdV2_384).unwrap();
+
+    let mut seq = Vec::new();
+    let mut qual = Vec::new();
+
+    let wl = RhapsodyWhitelist::bd_v2_384();
+    let hits_per_read = 100;
+
+    for i in 0..hits_per_read {
+        let cell_id = (i + 1) as u64;
+
+        let (c1, c2, c3) = wl
+            .cell_id_to_parts_ids(cell_id)
+            .expect("invalid BD cell id");
+
+        let mut cell = wl.create_cell_cassette(c1, c2, c3);
+
+        // One damaged base in C1. This should force fuzzy rescue.
+        cell[0] = b'N';
+
+        let umi = detector.grammar().umi_from_u64(i as u64);
+
+        let mut primer = detector
+            .grammar()
+            .synthesize(&cell, &umi)
+            .unwrap();
+
+        primer.extend_from_slice(b"GATCGATCGATCGATCGATCGATCGATCG");
+
+        qual.extend(std::iter::repeat_n(b'I', primer.len()));
+        seq.extend_from_slice(&primer);
+    }
+
+    let hits = detector.detect_all(&seq, &qual).unwrap();
+    assert_eq!(hits.len(), hits_per_read);
+
+    bench(
+        "BD fuzzy detect_all multimer",
+        100_000,
+        hits_per_read,
+        || {
+            std::hint::black_box(
+                detector.detect_all(&seq, &qual).unwrap()
+            );
+        },
+    );
 }
