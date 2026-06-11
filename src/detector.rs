@@ -86,7 +86,7 @@ impl PrimerDetector {
     }
 
     /// Creates a tab separated file:
-    /// old_cell_id <tab> new_cell_id <tab> reads_detected
+    /// old_cell_id  new_cell_id  reads_detected
     pub fn save_cell_translation_table<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let file = File::create(path)?;
         let mut out = BufWriter::new(file);

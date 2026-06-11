@@ -1,372 +1,288 @@
 # sc_primer
 
+A grammar-driven Rust crate for detecting, validating, correcting and generating
+single-cell primer structures for 10x Genomics, BD Rhapsody, Illumina and ONT workflows.
 
-A high-performance Rust library for detecting and extracting single-cell sequencing structures from FASTQ reads.
+## Features
 
-`sc_primer` provides a unified primer detection framework for:
+- 10x Genomics chemistry presets
+- BD Rhapsody chemistry presets
+- Custom grammar definitions
+- Exact whitelist validation
+- Unique 1-mismatch fuzzy rescue
+- ONT multimer detection
+- Reverse-complement detection
+- Primer synthesis and regeneration
+- Cell barcode translation tables
+- Reusable clap CLI integration
 
-* 10x Genomics Chromium chemistries
-* BD Rhapsody chemistries
-* Custom single-cell library layouts
-* Illumina-based workflows
-* ONT-based workflows
+## Installation and availability
 
-The crate is designed as a reusable building block for downstream tools such as normalizers, demultiplexers, quantifiers, and single-cell preprocessing pipelines.
+`sc_primer` is currently intended to be installed directly from GitHub.
 
-
-This crate intentionally bundles 10x and BD whitelist resources.
-Because the 10x 3M whitelist exceeds crates.io package limits, the full batteries-included crate is currently distributed via Git.
-
----
-
-# Features
-
-* Built-in support for common 10x and BD chemistries
-* Forward and reverse-complement detection
-* Optional mismatch-tolerant ("fuzzy") matching
-* Cell barcode extraction
-* UMI extraction
-* Insert sequence extraction
-* PolyT detection
-* Multiple molecule detection within a single read
-* Reusable CLI integration via Clap
-* Custom chemistry definitions
-
----
-
-# Installation
+The crate embeds large 10x whitelist resources, especially the 3M whitelist used
+for modern 10x chemistries. These data files make the package too large for a
+comfortable crates.io release, so the supported dependency style is currently a
+Git dependency.
 
 ```toml
 [dependencies]
-sc_primer = "CURRENT_VERSION"
+sc_primer = { git = "https://github.com/stela2502/bam_tide", package = "sc_primer" }
 ```
 
----
+For local development:
 
-# Quick Start
+```toml
+[dependencies]
+sc_primer = { path = "../sc_primer" }
+```
+
+The Rust package registry itself is called **crates.io**, but this crate is not
+currently distributed there because of the embedded whitelist size.
+
+## Core Concepts
+
+```text
+Chemistry
+    ↓
+Grammar
+    ↓
+PrimerDetector
+    ↓
+PrimerMatch
+```
+
+Built-in chemistries are convenience presets built on top of the grammar engine.
+
+## Supported Chemistries
+
+### 10x Genomics
+
+- tenx-three-prime-v1
+- tenx-three-prime-v2
+- tenx-three-prime-v3
+- tenx-three-prime-v4
+- tenx-five-prime
+- tenx-multiome-arc-v1
+
+### BD Rhapsody
+
+- bd-v1
+- bd-v2-96
+- bd-v2-384
+
+## Quick Start
 
 ```rust
 use sc_primer::{Chemistry, PrimerDetector};
 
-let detector = PrimerDetector::from_chemistry(
-    Chemistry::TenxV3
-)?;
+let detector =
+    PrimerDetector::from_chemistry(
+        Chemistry::TenxThreePrimeV3
+    )?;
 
-let hits = detector.detect_all(read_sequence);
-
-for hit in hits {
-    println!("{:?}", hit);
-}
+let hits = detector.detect_all(seq, qual)?;
 ```
 
----
+## Detection APIs
 
-# Library Architecture
+### detect_first()
 
-The crate is intentionally divided into two layers.
-
-## End-User API
-
-Most applications only need these types:
+Use for Illumina-style reads where only one primer is expected.
 
 ```rust
-use sc_primer::{
-    Chemistry,
-    PrimerCli,
-    PrimerDetector,
-    PrimerMatch,
-};
+let hit = detector.detect_first(seq, qual)?;
 ```
 
-| Type             | Purpose                      |
-| ---------------- | ---------------------------- |
-| `Chemistry`      | Built-in chemistry presets   |
-| `PrimerCli`      | Reusable clap integration    |
-| `PrimerDetector` | Main detection engine        |
-| `PrimerMatch`    | Result returned by detection |
+### detect_all()
 
----
+Use for ONT reads that may contain multiple concatenated molecules.
 
-## Internal Grammar Layer
+```rust
+let hits = detector.detect_all(seq, qual)?;
+```
 
-Internally all chemistries are converted into a common grammar representation.
+### generate()
 
-Examples of grammar tokens include:
+Generate a target primer from a ReadTagRecord.
+
+```rust
+let (target_cell, primer) =
+    detector.generate(&record)?;
+```
+
+## Grammar Language
+
+Supported operations:
 
 ```text
-FIXED
-SEARCH
-CELL
-BD_CELL
-SAMPLE
-UMI
-POLYT
+FIXED:<SEQ>:mm=<N>
+
+CELL:<LEN>
+TENX_CELL:<VERSION>
+BD_CELL:<VERSION>
+
+UMI:<LEN>
+
+POLYT:min=<N>
+
 INSERT
+
+SEARCH:<START>..<END>
+
+SKIP:<LEN>
+
+TAG:<LEN>
+
+FEATURE:<LEN>
 ```
 
-This allows:
-
-* 10x Genomics
-* BD Rhapsody
-* Custom chemistries
-
-to share the same detection engine.
-
----
-
-# Supported Chemistries
-
-## 10x Genomics
-
-* TenxV2
-* TenxV3
-* TenxV4
-
-## BD Rhapsody
-
-* BdV1
-* BdV2_96
-* BdV2_384
-
-These presets automatically configure barcode layouts, primer sequences, and extraction logic.
-
----
-
-# Public API
-
-## Chemistry
-
-```rust
-pub enum Chemistry {
-    TenxV2,
-    TenxV3,
-    TenxV4,
-    BdV1,
-    BdV2_96,
-    BdV2_384,
-}
-```
-
-The exact variants may evolve as additional chemistries are added.
-
----
-
-## Orientation
-
-```rust
-pub enum Orientation {
-    Forward,
-    ReverseComplement,
-}
-```
-
-Every detected molecule records the orientation in which it was found.
-
-This is particularly useful for ONT workflows where reads may arrive in either direction.
-
----
-
-# Primer Detection
-
-The primary entry point is:
-
-```rust
-let hits = detector.detect_all(sequence);
-```
-
-This scans the sequence and returns every detectable molecule.
-
-Each returned `PrimerMatch` contains:
-
-* coordinates
-* orientation
-* extracted cell barcode
-* extracted UMI
-* insert sequence
-* chemistry-specific metadata
-
----
-
-# Reusable CLI Integration
-
-One of the main goals of `sc_primer` is eliminating duplicated chemistry handling across tools.
-
-Instead of implementing chemistry selection in every application, simply embed the shared CLI.
-
-## Application CLI
-
-```rust
-#[derive(clap::Parser)]
-pub struct Cli {
-    #[command(flatten)]
-    pub primer: sc_primer::PrimerCli,
-}
-```
-
----
-
-## Creating a Detector
-
-```rust
-let detector = cli.primer.detector()?;
-```
-
-The detector is fully configured regardless of whether the user selected:
+### Example 10x grammar
 
 ```text
---chemistry tenx-v3
+FIXED:CTACACGACGCTCTTCCGATCT:mm=2
++TENX_CELL:3p-v3
++UMI:12
++POLYT:min=0
++INSERT
 ```
 
-or
+### Example BD grammar
 
 ```text
---chemistry bd-v2-384
+FIXED:ATAGGAAACTCATGGT:mm=2
++BD_CELL:v2.384
++POLYT:min=0
++INSERT
 ```
 
-or
+## PrimerMatch
 
-```text
---primer-structure ...
+Extract data from a detected primer:
+
+```rust
+let cell = hit.get_cell(seq, qual)?;
+let umi = hit.get_umi(seq, qual)?;
+let insert = hit.get_insert(seq, qual)?;
 ```
 
-This keeps chemistry handling centralized inside `sc_primer`.
-
----
-
-# Custom Chemistries
-
-For novel protocols a detector can be constructed directly from a grammar definition.
-
-Example:
-
-```text
-FIXED(ACGT...)
-CELL(16)
-UMI(12)
-POLYT
-INSERT
-```
-
-This enables rapid prototyping of new sequencing chemistries without modifying application code.
-
----
-
-# Fuzzy Matching
-
-`sc_primer` supports optional mismatch-tolerant matching of fixed primer sequences.
-
-This allows recovery of molecules containing sequencing errors.
-
-Example:
-
-```text
-CTACACGACGCTCTTCCGATCT
-```
-
-may still be detected even when a small number of mismatches are present.
-
-## Performance Impact
+## Barcode Validation
 
 ### 10x
 
-For 10x chemistries the overhead is negligible because only a small number of anchored primer sequences must be checked.
-
-### BD
-
-For BD chemistries fuzzy matching is more expensive because:
-
-* multiple barcode blocks are evaluated
-* whitelist matching is performed
-* shifted candidate positions are tested
-* mismatch scoring must be computed
-
-Use fuzzy matching when sensitivity is more important than maximum throughput.
-
----
-
-# Benchmarks
-
-Benchmarks were performed using multimer detection (`detect_all()`).
-
----
-
-## 10x Chromium
-
-### Standard Detection
+Workflow:
 
 ```text
-10x detect_all multimer
-8.348 µs/op
-0.835 µs/hit
+exact whitelist lookup
+    ↓
+unique 1-mismatch rescue
+    ↓
+fail
 ```
 
-### Fuzzy Detection
+### BD Rhapsody
+
+Workflow:
 
 ```text
-10x fuzzy detect_all multimer
-8.503 µs/op
-0.850 µs/hit
+C1/C2/C3 lookup
+    ↓
+unique 1-mismatch rescue
+    ↓
+cell id reconstruction
 ```
 
-| Mode     |        Time |
-| -------- | ----------: |
-| Standard | 8.348 µs/op |
-| Fuzzy    | 8.503 µs/op |
+## ONT Multimers
 
-Fuzzy matching increases runtime by only ~2%.
-
----
-
-## BD Rhapsody v2-384
-
-### Standard Detection
+The detector supports reads containing multiple:
 
 ```text
-BD detect_all multimer
-99.514 µs/op
-0.995 µs/hit
+primer + insert
+primer + insert
+primer + insert
 ```
 
-### Fuzzy Detection
+structures within the same sequencing read.
 
-```text
-BD fuzzy detect_all multimer
-176.714 µs/op
-1.767 µs/hit
+## Reverse Complement Detection
+
+Detected matches report:
+
+```rust
+Orientation::Forward
+Orientation::ReverseComplement
 ```
 
-| Mode     |          Time |
-| -------- | ------------: |
-| Standard |  99.514 µs/op |
-| Fuzzy    | 176.714 µs/op |
+## Cell Translation
 
-Even with fuzzy matching enabled, recovered molecules remain below 2 µs per hit.
+The detector can translate invalid or foreign barcodes into valid target-system
+barcodes and stores the mapping internally.
 
----
+```rust
+let translation =
+    detector.primer_translation();
+```
 
-# Typical Use Cases
+## CLI Usage
 
-* FASTQ normalization
-* ONT barcode recovery
-* Illumina preprocessing
-* Single-cell demultiplexing
-* Cell barcode extraction
-* UMI extraction
-* Sequencing chemistry prototyping
-* Long-read single-cell workflows
+Example:
 
----
+```bash
+identify_primers   --chemistry tenx-three-prime-v3   --seq ACTG...
+```
 
-# Design Goals
+Custom grammar:
 
-* Fast enough for production-scale sequencing datasets
-* Shared chemistry implementation across projects
-* Minimal downstream integration effort
-* Extensible grammar-based architecture
-* Consistent behavior across sequencing platforms
+```bash
+identify_primers   --primer-structure 'FIXED:AAA:mm=1+CELL:16+UMI:12+INSERT'   --seq ACTG...
+```
 
----
+## Benchmarks
 
-# License
+Recent release-mode measurements:
 
-MIT License.
+| Benchmark | µs/hit |
+|------------|---------:|
+| 10x exact | ~0.835 |
+| 10x fuzzy | ~0.850 |
+| BD exact | ~0.995 |
+| BD fuzzy | ~1.767 |
+
+The BD fuzzy benchmark intentionally exercises fuzzy rescue on every barcode and
+represents a worst-case workload.
+
+## Error Handling
+
+```rust
+PrimerResult<T>
+PrimerError
+```
+
+## Development
+
+Run tests:
+
+```bash
+cargo test
+```
+
+Run benchmarks:
+
+```bash
+cargo test --release benchmark_detect_all -- --ignored --nocapture
+```
+
+Build documentation:
+
+```bash
+cargo doc --no-deps
+```
+
+## Design Goals
+
+- Grammar-driven architecture
+- Shared implementation across chemistries
+- Fast exact lookup paths
+- Conservative fuzzy rescue
+- ONT multimer support as a first-class feature
+- Minimal overhead abstractions
