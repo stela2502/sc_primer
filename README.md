@@ -1,493 +1,370 @@
 # sc_primer
 
-`sc_primer` is a reusable Rust crate for detecting and extracting single-cell
-primer/read structures from sequencing reads.
+[![Crates.io](https://img.shields.io/crates/v/sc_primer.svg)](https://crates.io/crates/sc_primer)
+[![Docs.rs](https://docs.rs/sc_primer/badge.svg)](https://docs.rs/sc_primer)
 
-It is intended as shared infrastructure for tools such as `bam_tide`, ONT
-normalizers, Illumina normalizers, and other single-cell preprocessing binaries.
+A high-performance Rust library for detecting and extracting single-cell sequencing structures from FASTQ reads.
 
-The crate supports both:
+`sc_primer` provides a unified primer detection framework for:
 
-- simple fixed-position chemistries such as 10x Genomics
-- shifted/search-based chemistries such as BD Rhapsody
-- custom user-supplied primer grammars
+* 10x Genomics Chromium chemistries
+* BD Rhapsody chemistries
+* Custom single-cell library layouts
+* Illumina-based workflows
+* ONT-based workflows
 
-A major design goal is that the same detector can be used for both Illumina and
-ONT reads, including ONT reads that contain multiple concatenated
-primer+insert molecules.
+The crate is designed as a reusable building block for downstream tools such as normalizers, demultiplexers, quantifiers, and single-cell preprocessing pipelines.
 
 ---
 
 # Features
 
-- Chemistry presets:
-  
-  - `tenx-v2`
-  - `tenx-v3`
-  - `tenx-v4`
-  - `bd-v1`
-  - `bd-v2-96`
-  - `bd-v2-384`
-
-- Custom primer grammar with `--primer-structure`
-
-- Reusable `clap` CLI block via `PrimerCli`
-
-- Reverse-complement detection
-
-- `detect_all()` for ONT multimers
-
-- Coordinate-backed `PrimerMatch` values
-
-- `get_cell()`, `get_umi()`, and `get_insert()` helpers
-
-- Normal FASTQ sequence/quality handling with `&[u8]`
-
-- BD Rhapsody whitelist/block logic
+* Built-in support for common 10x and BD chemistries
+* Forward and reverse-complement detection
+* Optional mismatch-tolerant ("fuzzy") matching
+* Cell barcode extraction
+* UMI extraction
+* Insert sequence extraction
+* PolyT detection
+* Multiple molecule detection within a single read
+* Reusable CLI integration via Clap
+* Custom chemistry definitions
 
 ---
 
 # Installation
 
-Use from crates.io:
-
 ```toml
 [dependencies]
-sc_primer = "0.1"
-```
-
-or from a local checkout:
-
-```toml
-[dependencies]
-sc_primer = { path = "../sc_primer" }
-```
-
-If your binary wants to use the reusable CLI block, also enable `clap` in your
-binary crate:
-
-```toml
-[dependencies]
-clap = { version = "4.5", features = ["derive"] }
-sc_primer = { path = "../sc_primer" }
+sc_primer = "CURRENT_VERSION"
 ```
 
 ---
 
-# Quick Rust API Example
+# Quick Start
 
 ```rust
 use sc_primer::{Chemistry, PrimerDetector};
 
-fn main() -> Result<(), String> {
-    let seq = b"CTACACGACGCTCTTCCGATCTACGTACGTACGTACGTGATCGATCGATTTTTTTTTTTTTTTTGGCCTTAA";
-    let qual = b"IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII";
+let detector = PrimerDetector::from_chemistry(
+    Chemistry::TenxV3
+)?;
 
-    let detector = PrimerDetector::from_chemistry(Chemistry::TenxV3)?;
-    let hits = detector.detect_all(seq, qual)?;
+let hits = detector.detect_all(read_sequence);
 
-    for hit in hits {
-        let cell = hit.get_cell(seq, qual)?;
-        let umi = hit.get_umi(seq, qual)?;
-        let insert = hit.get_insert(seq, qual)?;
-
-        println!("cell={}", String::from_utf8_lossy(cell.seq));
-        println!("umi={}", String::from_utf8_lossy(umi.seq));
-        println!("insert={}", String::from_utf8_lossy(insert.seq));
-    }
-
-    Ok(())
+for hit in hits {
+    println!("{:?}", hit);
 }
 ```
 
-`PrimerMatch` stores coordinates only. It does not copy sequence or quality
-data. The original FASTQ `seq` and `qual` remain normal byte strings.
+---
+
+# Library Architecture
+
+The crate is intentionally divided into two layers.
+
+## End-User API
+
+Most applications only need these types:
+
+```rust
+use sc_primer::{
+    Chemistry,
+    PrimerCli,
+    PrimerDetector,
+    PrimerMatch,
+};
+```
+
+| Type             | Purpose                      |
+| ---------------- | ---------------------------- |
+| `Chemistry`      | Built-in chemistry presets   |
+| `PrimerCli`      | Reusable clap integration    |
+| `PrimerDetector` | Main detection engine        |
+| `PrimerMatch`    | Result returned by detection |
+
+---
+
+## Internal Grammar Layer
+
+Internally all chemistries are converted into a common grammar representation.
+
+Examples of grammar tokens include:
+
+```text
+FIXED
+SEARCH
+CELL
+BD_CELL
+SAMPLE
+UMI
+POLYT
+INSERT
+```
+
+This allows:
+
+* 10x Genomics
+* BD Rhapsody
+* Custom chemistries
+
+to share the same detection engine.
+
+---
+
+# Supported Chemistries
+
+## 10x Genomics
+
+* TenxV2
+* TenxV3
+* TenxV4
+
+## BD Rhapsody
+
+* BdV1
+* BdV2_96
+* BdV2_384
+
+These presets automatically configure barcode layouts, primer sequences, and extraction logic.
+
+---
+
+# Public API
+
+## Chemistry
+
+```rust
+pub enum Chemistry {
+    TenxV2,
+    TenxV3,
+    TenxV4,
+    BdV1,
+    BdV2_96,
+    BdV2_384,
+}
+```
+
+The exact variants may evolve as additional chemistries are added.
+
+---
+
+## Orientation
+
+```rust
+pub enum Orientation {
+    Forward,
+    ReverseComplement,
+}
+```
+
+Every detected molecule records the orientation in which it was found.
+
+This is particularly useful for ONT workflows where reads may arrive in either direction.
+
+---
+
+# Primer Detection
+
+The primary entry point is:
+
+```rust
+let hits = detector.detect_all(sequence);
+```
+
+This scans the sequence and returns every detectable molecule.
+
+Each returned `PrimerMatch` contains:
+
+* coordinates
+* orientation
+* extracted cell barcode
+* extracted UMI
+* insert sequence
+* chemistry-specific metadata
 
 ---
 
 # Reusable CLI Integration
 
-`sc_primer` provides a reusable `clap::Args` block:
+One of the main goals of `sc_primer` is eliminating duplicated chemistry handling across tools.
+
+Instead of implementing chemistry selection in every application, simply embed the shared CLI.
+
+## Application CLI
 
 ```rust
-use clap::Args;
-
-use crate::{Chemistry, PrimerDetector};
-
-#[derive(Debug, Clone, Args)]
-pub struct PrimerCli {
-    /// Preset single-cell chemistry.
-    ///
-    /// Ignored if --primer-structure is supplied.
-    #[arg(long, value_enum, default_value_t = Chemistry::default())]
-    pub chemistry: Chemistry,
-
-    /// Custom primer/read structure grammar.
-    ///
-    /// Overrides --chemistry.
-    #[arg(long)]
-    pub primer_structure: Option<String>,
-
-    /// Also search the reverse-complement orientation.
-    #[arg(long, default_value_t = true)]
-    pub detect_reverse_complement: bool,
-}
-
-impl PrimerCli {
-    pub fn detector(&self) -> Result<PrimerDetector, String> {
-        let mut detector = if let Some(structure) = self.primer_structure.as_deref() {
-            PrimerDetector::from_structure("custom", structure)?
-        } else {
-            PrimerDetector::from_chemistry(self.chemistry)?
-        };
-
-        detector.set_detect_reverse_complement(self.detect_reverse_complement);
-
-        Ok(detector)
-    }
-}
-```
-
-In a downstream binary, flatten it into your own CLI:
-
-```rust
-use clap::Parser;
-
-#[derive(Debug, Parser)]
-#[command(author, version, about)]
+#[derive(clap::Parser)]
 pub struct Cli {
     #[command(flatten)]
     pub primer: sc_primer::PrimerCli,
-
-    #[arg(long)]
-    pub input: String,
-
-    #[arg(long)]
-    pub output: String,
 }
-```
-
-Then create the detector from the parsed CLI object:
-
-```rust
-use clap::Parser;
-
-fn main() -> Result<(), String> {
-    let cli = Cli::parse();
-
-    let detector = cli.primer.detector()?;
-
-    // ONT-style usage:
-    // let hits = detector.detect_all(seq, qual)?;
-
-    // Illumina-style usage:
-    // let hit = detector.detect_first(r1_seq, r1_qual)?;
-
-    Ok(())
-}
-```
-
-This gives every binary the same primer interface:
-
-```bash
-my-normalizer \
-  --chemistry tenx-v3 \
-  --input reads.fastq.gz \
-  --output normalized.fastq.gz
-```
-
-or:
-
-```bash
-my-normalizer \
-  --chemistry bd-v2-384 \
-  --input reads.fastq.gz \
-  --output normalized.fastq.gz
-```
-
-or with a completely custom grammar:
-
-```bash
-my-normalizer \
-  --primer-structure 'FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=10+INSERT' \
-  --input reads.fastq.gz \
-  --output normalized.fastq.gz
-```
-
-The rule is simple:
-
-```text
-if --primer-structure is supplied, it overrides --chemistry
-otherwise --chemistry is used
 ```
 
 ---
 
-# Fancy Chemistry Help Strings
+## Creating a Detector
 
-`Chemistry` should derive `clap::ValueEnum`, and the variant documentation is
-used by `clap` in generated help text.
+```rust
+let detector = cli.primer.detector()?;
+```
+
+The detector is fully configured regardless of whether the user selected:
+
+```text
+--chemistry tenx-v3
+```
+
+or
+
+```text
+--chemistry bd-v2-384
+```
+
+or
+
+```text
+--primer-structure ...
+```
+
+This keeps chemistry handling centralized inside `sc_primer`.
+
+---
+
+# Custom Chemistries
+
+For novel protocols a detector can be constructed directly from a grammar definition.
 
 Example:
 
-```rust
-use clap::ValueEnum;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum Chemistry {
-    /// 10x Genomics Chromium Single Cell 3' v2.
-    ///
-    /// Layout: adapter + 16 bp cell barcode + 10 bp UMI + polyT + insert.
-    TenxV2,
-
-    /// 10x Genomics Chromium Single Cell 3' v3.
-    ///
-    /// Layout: adapter + 16 bp cell barcode + 12 bp UMI + polyT + insert.
-    #[default]
-    TenxV3,
-
-    /// 10x Genomics Chromium Single Cell 3' v4 / GEM-X style preset.
-    ///
-    /// Layout: adapter + 16 bp cell barcode + 12 bp UMI + polyT + insert.
-    TenxV4,
-
-    /// BD Rhapsody v1 / older layout.
-    ///
-    /// Uses three 9 bp barcode blocks, BD whitelist lookup, longer linker gaps,
-    /// and an 8 bp UMI.
-    BdV1,
-
-    /// BD Rhapsody v2 96-cell combinatorial barcode layout.
-    ///
-    /// Uses three 9 bp barcode blocks, BD whitelist lookup, shifts 0..4,
-    /// and the 96-block barcode ID formula.
-    BdV2_96,
-
-    /// BD Rhapsody v2 384-cell combinatorial barcode layout.
-    ///
-    /// Uses three 9 bp barcode blocks, BD whitelist lookup, shifts 0..4,
-    /// and the 384-block barcode ID formula.
-    BdV2_386,
-}
-```
-
-With the flattened `PrimerCli`, a binary automatically exposes:
-
-```bash
-my-normalizer --help
-```
-
-with options similar to:
-
 ```text
---chemistry <CHEMISTRY>
-    Preset single-cell chemistry.
-
-    Possible values:
-    tenx-v2
-    tenx-v3
-    tenx-v4
-    bd-v1
-    bd-v2-96
-    bd-v2-384
-
---primer-structure <PRIMER_STRUCTURE>
-    Custom primer/read structure grammar. Overrides --chemistry.
-
---detect-reverse-complement
-    Also search the reverse-complement orientation.
-```
-
----
-
-# Chemistry Presets
-
-## 10x Genomics
-
-10x-style chemistries are adapter anchored.
-
-Conceptually:
-
-```text
-FIXED + CELL + UMI + POLYT + INSERT
-```
-
-Example preset grammar for 10x v3:
-
-```text
-FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=10+INSERT
-```
-
-## BD Rhapsody
-
-BD Rhapsody is not just a fixed cell barcode plus UMI.
-
-It uses three barcode blocks and whitelist lookup logic.
-
-The v2 layouts also use the historical Rustody-style shift search:
-
-```text
-SEARCH:0..4
-```
-
-The presets are represented through:
-
-```text
-BD_CELL:v1
-BD_CELL:v2.96
-BD_CELL:v2.384
-```
-
-These primitives hide the BD-specific block positions, whitelist lookup, UMI
-positioning, and final cell-id calculation.
-
----
-
-# Custom Grammar
-
-A custom grammar can be supplied with `--primer-structure` or directly through
-the Rust API:
-
-```rust
-let detector = PrimerDetector::from_structure(
-    "custom",
-    "FIXED:CTACACGACGCTCTTCCGATCT:mm=2+CELL:16+UMI:12+POLYT:min=10+INSERT",
-)?;
-```
-
-Supported primitives:
-
-```text
-FIXED:<SEQ>:mm=<N>
-CELL:<LEN>
-UMI:<LEN>
-POLYT:min=<N>
+FIXED(ACGT...)
+CELL(16)
+UMI(12)
+POLYT
 INSERT
-SKIP:<LEN>
-SEARCH:<START>..<END>
-BD_CELL:v1
-BD_CELL:v2.96
-BD_CELL:v2.384
 ```
 
-Planned future primitives:
+This enables rapid prototyping of new sequencing chemistries without modifying application code.
+
+---
+
+# Fuzzy Matching
+
+`sc_primer` supports optional mismatch-tolerant matching of fixed primer sequences.
+
+This allows recovery of molecules containing sequencing errors.
+
+Example:
 
 ```text
-TAG:<LEN>
-FEATURE:<LEN>
+CTACACGACGCTCTTCCGATCT
 ```
+
+may still be detected even when a small number of mismatches are present.
+
+## Performance Impact
+
+### 10x
+
+For 10x chemistries the overhead is negligible because only a small number of anchored primer sequences must be checked.
+
+### BD
+
+For BD chemistries fuzzy matching is more expensive because:
+
+* multiple barcode blocks are evaluated
+* whitelist matching is performed
+* shifted candidate positions are tested
+* mismatch scoring must be computed
+
+Use fuzzy matching when sensitivity is more important than maximum throughput.
 
 ---
 
-# ONT Multimer Detection
+# Benchmarks
 
-ONT reads may contain multiple concatenated primer+insert molecules:
+Benchmarks were performed using multimer detection (`detect_all()`).
+
+---
+
+## 10x Chromium
+
+### Standard Detection
 
 ```text
-adapter-cell-umi-polyT-insert
-adapter-cell-umi-polyT-insert
-adapter-cell-umi-polyT-insert
+10x detect_all multimer
+8.348 µs/op
+0.835 µs/hit
 ```
 
-Use:
+### Fuzzy Detection
 
-```rust
-let hits = detector.detect_all(seq, qual)?;
+```text
+10x fuzzy detect_all multimer
+8.503 µs/op
+0.850 µs/hit
 ```
 
-This returns:
+| Mode     |        Time |
+| -------- | ----------: |
+| Standard | 8.348 µs/op |
+| Fuzzy    | 8.503 µs/op |
 
-```rust
-Vec<PrimerMatch>
-```
-
-Each `PrimerMatch` can slice its own cell, UMI, and insert:
-
-```rust
-for hit in hits {
-    let cell = hit.get_cell(seq, qual)?;
-    let umi = hit.get_umi(seq, qual)?;
-    let insert = hit.get_insert(seq, qual)?;
-}
-```
-
-This is the preferred API for ONT normalizers.
+Fuzzy matching increases runtime by only ~2%.
 
 ---
 
-# Illumina Usage
+## BD Rhapsody v2-384
 
-For Illumina read normalization, usually only the first valid primer structure
-in R1 is needed:
+### Standard Detection
 
-```rust
-let hit = detector.detect_first(r1_seq, r1_qual)?;
-let cell = hit.get_cell(r1_seq, r1_qual)?;
-let umi = hit.get_umi(r1_seq, r1_qual)?;
+```text
+BD detect_all multimer
+99.514 µs/op
+0.995 µs/hit
 ```
 
-Then the normalizer can emit artificial R1/R2 FASTQ records and a side-channel
-read tag table.
+### Fuzzy Detection
 
-For BD Rhapsody, R1 should be processed for:
+```text
+BD fuzzy detect_all multimer
+176.714 µs/op
+1.767 µs/hit
+```
 
-- cell id
-- UMI
-- quality
-- trailing/polyT information
-- optional sample tags/features
+| Mode     |          Time |
+| -------- | ------------: |
+| Standard |  99.514 µs/op |
+| Fuzzy    | 176.714 µs/op |
 
-R2 can stay mapper-facing, for example for STAR.
+Even with fuzzy matching enabled, recovered molecules remain below 2 µs per hit.
 
 ---
 
-# PrimerMatch and PrimerSlice
+# Typical Use Cases
 
-`PrimerMatch` is coordinate-backed.
-
-It is designed for cheap reuse with large reads:
-
-```rust
-let cell = hit.get_cell(seq, qual)?;
-```
-
-The returned slice has the shape:
-
-```rust
-pub struct PrimerSlice<'a> {
-    pub seq: &'a [u8],
-    pub qual: &'a [u8],
-}
-```
-
-This avoids copying sequence and quality data into every match.
+* FASTQ normalization
+* ONT barcode recovery
+* Illumina preprocessing
+* Single-cell demultiplexing
+* Cell barcode extraction
+* UMI extraction
+* Sequencing chemistry prototyping
+* Long-read single-cell workflows
 
 ---
 
-# Error Handling
+# Design Goals
 
-The crate intentionally uses simple errors:
-
-```rust
-Result<T, String>
-```
-
-This keeps downstream crates simple. Users can convert into `anyhow::Error` if
-they want:
-
-```rust
-let detector = cli.primer.detector().map_err(anyhow::Error::msg)?;
-```
+* Fast enough for production-scale sequencing datasets
+* Shared chemistry implementation across projects
+* Minimal downstream integration effort
+* Extensible grammar-based architecture
+* Consistent behavior across sequencing platforms
 
 ---
 
-# Design Philosophy
+# License
 
-- Preserve sound Rustody logic
-- Keep BD/Rhapsody whitelist logic available
-- Avoid locking everything into fixed 10x-style layouts
-- Make presets convenient but not mandatory
-- Keep custom grammar as an escape hatch
-- Support ONT multimers as a first-class use case
-- Use coordinate-backed matches instead of copying read data
-- Make CLI flattening simple for downstream binaries
+MIT License.
