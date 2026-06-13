@@ -21,6 +21,14 @@ static TENX_3M_3PGEX_MAY_2023_TRU: &[u8] =
 static TENX_3M_5PGEX_JAN_2023: &[u8] =
     include_bytes!("whitelists/3M-5pgex-jan-2023.txt.gz");
 
+
+static TENX_737K_APRIL_2014_RC: &[u8] =
+    include_bytes!("whitelists/737k-april-2014_rc.txt.gz");
+
+static TENX_737K_ARC_V1: &[u8] =
+    include_bytes!("whitelists/737K-arc-v1.txt.gz");
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TenxVersion {
     ThreePrimeV1,
